@@ -45,7 +45,8 @@ This repository therefore implements an independent prototype that reproduces th
 - global-layer normal-vector sharing into tracked stability estimation, so local candidate poses can initialize their support plane from the NDT terrain normal before iterative contact evaluation
 - integrated paper-style pipeline that feeds an NDT voxel global path into the Hybrid A* local planner
 - receding-horizon paper-style pipeline that repeatedly rebuilds the NDT map, replans globally, plans locally, advances execution, and handles a mid-run obstacle update
-- paper-style terrain scenario suite covering stairs, rubble, grass, hill, and bridge/trench layouts from the experiment themes
+- paper-style terrain scenario suite covering stairs, rubble, grass, hill, bridge/trench, and field/complex-scene layouts from the experiment themes
+- scenario-level terrain analysis summaries for roughness, slope, sparsity, complexity, and risk voxel counts
 - local iterative shortcut smoothing constrained by terrain risk and geometric feasibility
 - local trajectory optimization over length, risk, curvature, and configuration stability
 - stability sampling along the final path
@@ -82,7 +83,7 @@ Expected verification gates:
 - paper-pipeline and paper-receding checks verify that the local traversable set is windowed from global traversability and queried during local planning
 - paper-pipeline and paper-receding checks verify that the local terrain map is cropped to a robot-centric sliding window
 - paper-pipeline and paper-receding checks verify that NDT global normals initialize local tracked-stability estimation
-- paper-scenario checks pass for stairs/rubble/grass/hill/bridge NDT global planning success, cost bounds, path length, and visualization artifacts
+- paper-scenario checks pass for stairs/rubble/grass/hill/bridge/field NDT global planning success, terrain metrics, cost bounds, path length, and visualization artifacts
 - `verify_paper_mainline` runs only the paper-mainline checks and intentionally excludes historical ablation, tracking, and extra benchmark demos
 - point-cloud file round-trip checks pass for CSV, XYZ, NPY, and ASCII PLY
 - planner reports success
@@ -117,7 +118,7 @@ The current prototype is not yet a full field-system reproduction. Missing parts
 
 - real sensor logs or field datasets
 - replacing the legacy elevation-grid planner path with the NDT voxel planner in the main demo pipeline
-- richer large-scale experiment scenes matching the paper's stairs, rubble, grass, hill, bridge, and field layouts
+- real large-scale experiment scenes matching the paper's measured field layouts
 - kinodynamic constraints and controller-level actuator limits
 - real low-level motor control and actuator limits
 - online replanning benchmark on real large-scale rough-terrain data

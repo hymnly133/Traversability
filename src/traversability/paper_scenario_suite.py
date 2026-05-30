@@ -44,6 +44,7 @@ def run_scenario(scenario: Scenario, output_dir: Path) -> dict:
     points = sample_points(scenario.height, scenario.obstacle, scenario.resolution, scenario.origin)
     ndt_map = NDTImplicitMap(points, ndt_config(scenario.resolution))
     result = plan_ndt_global(ndt_map, scenario.start, scenario.goal)
+    metric_summary = summarize_metrics(ndt_map)
     plot_scenario(output_dir, scenario, result.path_xyz)
     return {
         "scenario": scenario.name,
@@ -56,6 +57,7 @@ def run_scenario(scenario: Scenario, output_dir: Path) -> dict:
         "traversable_voxels": result.traversable_voxels,
         "connected_components": result.connected_components,
         "path_points": len(result.path_xyz),
+        **metric_summary,
     }
 
 
@@ -79,6 +81,7 @@ def make_scenarios() -> list[Scenario]:
         terrain_grass(),
         terrain_hill(),
         terrain_bridge(),
+        terrain_field(),
     ]
 
 
@@ -144,6 +147,54 @@ def terrain_bridge() -> Scenario:
     return Scenario("bridge", height, obstacle, resolution, origin, start, goal)
 
 
+def terrain_field() -> Scenario:
+    xx, yy, height, obstacle, origin, resolution, start, goal = terrain_base("field", size=104, resolution=0.06)
+    start = (-2.45, -2.15, 0.0)
+    goal = (2.35, 2.15, 0.0)
+    height += 0.08 * np.sin(3.8 * xx + 0.5 * np.cos(yy)) * np.cos(2.6 * yy)
+
+    low_stairs = (xx > -1.55) & (xx < -0.65) & (yy > -0.15) & (yy < 1.45)
+    height += np.where(low_stairs, 0.055 * np.floor((yy + 0.15) / 0.20), 0.0)
+
+    high_stairs = (xx > 0.65) & (xx < 1.35) & (yy > -1.45) & (yy < -0.10)
+    height += np.where(high_stairs, 0.11 * np.floor((yy + 1.45) / 0.22), 0.0)
+
+    ramp = (xx > -0.25) & (xx < 0.70) & (yy > 0.25) & (yy < 1.55)
+    height += np.where(ramp, 0.38 * np.clip((yy - 0.25) / 1.30, 0.0, 1.0), 0.0)
+
+    rng = np.random.default_rng(19)
+    for _ in range(34):
+        cx, cy = rng.uniform(-2.2, 2.1), rng.uniform(-1.9, 1.9)
+        radius = rng.uniform(0.04, 0.14)
+        bump = np.exp(-(((xx - cx) / radius) ** 2 + ((yy - cy) / (radius * rng.uniform(0.7, 1.4))) ** 2))
+        height += rng.uniform(0.04, 0.20) * bump
+        obstacle |= bump > 0.90
+
+    obstacle |= ((xx + 0.25) ** 2 / 0.05 + ((yy + 0.80) ** 2) / 0.08) < 1.0
+    obstacle |= ((xx - 1.55) ** 2 / 0.04 + ((yy - 0.65) ** 2) / 0.16) < 1.0
+    obstacle |= (np.abs(xx + 0.05) < 0.09) & (yy > -1.35) & (yy < -0.20)
+    corridor = np.abs(yy - (0.82 * xx - 0.10)) < 0.32
+    obstacle &= ~corridor
+    height = np.where(corridor, 0.05 * np.sin(2.2 * xx) + 0.10 * np.clip((xx + 2.4) / 4.8, 0.0, 1.0), height)
+    height[obstacle] += 0.58
+    return Scenario("field", height, obstacle, resolution, origin, start, goal)
+
+
+def summarize_metrics(ndt_map: NDTImplicitMap) -> dict:
+    metrics = list(ndt_map.compute_metrics().values())
+    finite = [metric for metric in metrics if np.isfinite(metric.traversal_cost)]
+    return {
+        "mean_roughness": float(np.mean([metric.roughness for metric in metrics])) if metrics else float("nan"),
+        "mean_slope_rad": float(np.mean([metric.slope for metric in metrics])) if metrics else float("nan"),
+        "mean_sparsity": float(np.mean([metric.sparsity for metric in metrics])) if metrics else float("nan"),
+        "mean_complexity": float(np.mean([metric.complexity for metric in metrics])) if metrics else float("nan"),
+        "terrain_risk_voxels": int(sum(metric.terrain_risk for metric in metrics)),
+        "collision_risk_voxels": int(sum(metric.collision_risk for metric in metrics)),
+        "falling_risk_voxels": int(sum(metric.falling_risk for metric in metrics)),
+        "finite_cost_voxels": len(finite),
+    }
+
+
 def write_summary(output_dir: Path, rows: list[dict]) -> None:
     with (output_dir / "paper_scenarios.csv").open("w", newline="", encoding="utf-8") as file:
         fieldnames = list(rows[0].keys())
@@ -168,6 +219,10 @@ def aggregate_rows(rows: list[dict]) -> dict:
         "mean_path_length_m": float(np.mean([row["path_length_m"] for row in rows])),
         "max_traversal_cost": float(max(row["max_traversal_cost"] for row in rows)),
         "mean_traversable_voxels": float(np.mean([row["traversable_voxels"] for row in rows])),
+        "mean_roughness": float(np.mean([row["mean_roughness"] for row in rows])),
+        "mean_slope_rad": float(np.mean([row["mean_slope_rad"] for row in rows])),
+        "mean_sparsity": float(np.mean([row["mean_sparsity"] for row in rows])),
+        "mean_complexity": float(np.mean([row["mean_complexity"] for row in rows])),
     }
 
 
@@ -206,6 +261,7 @@ def print_summary(output_dir: Path, rows: list[dict]) -> None:
     table.add_column("Runtime", justify="right")
     table.add_column("Path", justify="right")
     table.add_column("Max cost", justify="right")
+    table.add_column("Complexity", justify="right")
     for row in rows:
         table.add_row(
             row["scenario"],
@@ -213,6 +269,7 @@ def print_summary(output_dir: Path, rows: list[dict]) -> None:
             f"{row['runtime_ms']:.1f} ms",
             f"{row['path_length_m']:.2f} m",
             f"{row['max_traversal_cost']:.3f}",
+            f"{row['mean_complexity']:.3f}",
         )
     Console().print(table)
     Console().print(f"[green]Wrote paper scenario outputs to[/green] {output_dir.resolve()}")
