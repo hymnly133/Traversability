@@ -56,6 +56,98 @@ class NDTMetric:
         return float("inf") if self.traversal_risk else self.complexity
 
 
+@dataclass
+class OctreeNode:
+    children: dict[int, "OctreeNode"]
+    keys: set[tuple[int, int, int]]
+
+
+class SparseOctreeIndex:
+    """Sparse octree over integer voxel keys for the global volumetric map."""
+
+    def __init__(self, max_depth: int = 10):
+        self.max_depth = max_depth
+        self.root = OctreeNode(children={}, keys=set())
+        self.keys: set[tuple[int, int, int]] = set()
+        self.offset = 1 << (max_depth - 1)
+        self.width = 1 << max_depth
+
+    def insert(self, key: tuple[int, int, int]) -> None:
+        if key in self.keys:
+            return
+        self.keys.add(key)
+        node = self.root
+        node.keys.add(key)
+        ix, iy, iz = self.positive_key(key)
+        for shift in range(self.max_depth - 1, -1, -1):
+            child_index = ((ix >> shift) & 1) << 2 | ((iy >> shift) & 1) << 1 | ((iz >> shift) & 1)
+            node = node.children.setdefault(child_index, OctreeNode(children={}, keys=set()))
+            node.keys.add(key)
+
+    def contains(self, key: tuple[int, int, int]) -> bool:
+        return key in self.keys
+
+    def neighborhood(
+        self,
+        center: tuple[int, int, int],
+        radius: int,
+    ) -> list[tuple[int, int, int]]:
+        lower = (center[0] - radius, center[1] - radius, center[2] - radius)
+        upper = (center[0] + radius, center[1] + radius, center[2] + radius)
+        return [key for key in self.range_query(lower, upper)]
+
+    def range_query(
+        self,
+        lower: tuple[int, int, int],
+        upper: tuple[int, int, int],
+    ) -> list[tuple[int, int, int]]:
+        result: list[tuple[int, int, int]] = []
+        self.collect_range(self.root, (0, 0, 0), self.width, lower, upper, result)
+        return result
+
+    def collect_range(
+        self,
+        node: OctreeNode,
+        origin: tuple[int, int, int],
+        size: int,
+        lower: tuple[int, int, int],
+        upper: tuple[int, int, int],
+        result: list[tuple[int, int, int]],
+    ) -> None:
+        node_min = (origin[0] - self.offset, origin[1] - self.offset, origin[2] - self.offset)
+        node_max = (node_min[0] + size - 1, node_min[1] + size - 1, node_min[2] + size - 1)
+        if any(node_max[axis] < lower[axis] or node_min[axis] > upper[axis] for axis in range(3)):
+            return
+        if all(lower[axis] <= node_min[axis] and node_max[axis] <= upper[axis] for axis in range(3)):
+            result.extend(node.keys)
+            return
+        if not node.children:
+            result.extend(key for key in node.keys if all(lower[axis] <= key[axis] <= upper[axis] for axis in range(3)))
+            return
+        half = size // 2
+        for child_index, child in node.children.items():
+            child_origin = (
+                origin[0] + (half if child_index & 4 else 0),
+                origin[1] + (half if child_index & 2 else 0),
+                origin[2] + (half if child_index & 1 else 0),
+            )
+            self.collect_range(child, child_origin, half, lower, upper, result)
+
+    def positive_key(self, key: tuple[int, int, int]) -> tuple[int, int, int]:
+        shifted = (key[0] + self.offset, key[1] + self.offset, key[2] + self.offset)
+        if any(value < 0 or value >= self.width for value in shifted):
+            raise ValueError(f"voxel key {key} exceeds octree depth {self.max_depth}")
+        return shifted
+
+    @property
+    def leaf_count(self) -> int:
+        return len(self.keys)
+
+    @property
+    def node_count(self) -> int:
+        return count_octree_nodes(self.root)
+
+
 class NDTImplicitMap:
     """Sparse NDT voxel map matching the paper's global implicit-map boundary."""
 
@@ -71,10 +163,12 @@ class NDTImplicitMap:
             if self.origin.shape != (3,):
                 raise ValueError("origin must be a 3-vector")
             self.cells: dict[tuple[int, int, int], NDTCell] = {}
+            self.octree = SparseOctreeIndex()
         else:
             self.points = validate_points(points)
             self.origin = np.asarray(origin, dtype=np.float64) if origin is not None else np.min(self.points, axis=0)
             self.cells = {}
+            self.octree = SparseOctreeIndex()
             self.integrate_points(self.points)
         self.occupied = self.occupied_keys()
 
@@ -87,6 +181,7 @@ class NDTImplicitMap:
         for point in new_points:
             key = self.key_from_xyz(point)
             self.cells[key] = update_cell(self.cells.get(key), key, point)
+            self.octree.insert(key)
         self.points = np.vstack([self.points, new_points]) if len(self.points) else new_points.copy()
         self.occupied = self.occupied_keys()
         self.metrics = {}
@@ -148,7 +243,7 @@ class NDTImplicitMap:
     def fuse_neighborhood(self, key: tuple[int, int, int]) -> tuple[int, np.ndarray, np.ndarray] | None:
         radius_cells = max(1, int(math.ceil(self.config.fusion_radius / self.config.voxel_size)))
         cells = []
-        for neighbor_key in neighbor_keys(key, radius_cells):
+        for neighbor_key in self.octree.neighborhood(key, radius_cells):
             cell = self.cells.get(neighbor_key)
             if cell is not None and cell.count > 0:
                 cells.append(cell)
@@ -225,6 +320,10 @@ def build_cells(points: np.ndarray, origin: np.ndarray, voxel_size: float) -> di
         covariance += np.eye(3) * 1e-8
         cells[key] = NDTCell(key=key, count=len(values), mean=mean, covariance=covariance)
     return cells
+
+
+def count_octree_nodes(node: OctreeNode) -> int:
+    return 1 + sum(count_octree_nodes(child) for child in node.children.values())
 
 
 def update_cell(cell: NDTCell | None, key: tuple[int, int, int], point: np.ndarray) -> NDTCell:

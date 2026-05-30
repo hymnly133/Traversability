@@ -23,6 +23,7 @@ def main() -> None:
     )
     metrics = ndt_map.compute_metrics()
     require(len(ndt_map.cells) > 200, "too few NDT cells were created")
+    verify_octree_index(ndt_map)
     require(len(metrics) > 150, "too few saturated occupied NDT cells were analyzed")
 
     flat_key = nearest_metric(metrics, np.array([-1.2, 0.0, 0.0]))
@@ -62,6 +63,7 @@ def verify_incremental_integration(points: np.ndarray, config: NDTConfig) -> Non
     for frame in np.array_split(points, 4):
         incremental.integrate_points(frame)
 
+    verify_octree_index(incremental)
     require(batch.occupied == incremental.occupied, "incremental occupied voxel set differs from batch map")
     require(set(batch.cells) == set(incremental.cells), "incremental cell set differs from batch map")
     for key in batch.cells:
@@ -80,6 +82,22 @@ def verify_incremental_integration(points: np.ndarray, config: NDTConfig) -> Non
             abs(batch_metrics[key].complexity - incremental_metrics[key].complexity) < 1e-6,
             f"incremental complexity mismatch at {key}",
         )
+
+
+def verify_octree_index(ndt_map: NDTImplicitMap) -> None:
+    require(ndt_map.octree.leaf_count == len(ndt_map.cells), "octree leaf count does not match NDT cells")
+    require(ndt_map.octree.node_count > ndt_map.octree.leaf_count, "octree did not create internal nodes")
+    sample_keys = sorted(ndt_map.cells)[:10]
+    for key in sample_keys:
+        require(ndt_map.octree.contains(key), f"octree is missing key {key}")
+        radius = 2
+        indexed = set(ndt_map.octree.neighborhood(key, radius))
+        brute = {
+            candidate
+            for candidate in ndt_map.cells
+            if all(abs(candidate[axis] - key[axis]) <= radius for axis in range(3))
+        }
+        require(indexed == brute, f"octree neighborhood query mismatch at {key}")
 
 
 def make_test_cloud() -> np.ndarray:
