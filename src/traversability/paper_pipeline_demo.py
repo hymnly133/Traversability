@@ -9,7 +9,7 @@ import numpy as np
 from rich.console import Console
 from rich.table import Table
 
-from traversability.hybrid_local_planner import HybridLocalPlannerConfig, plan_hybrid_local
+from traversability.hybrid_local_planner import HybridLocalPlannerConfig, NDTLocalTraversabilityGuide, plan_hybrid_local
 from traversability.implicit_map import ImplicitTerrainMap
 from traversability.ndt_map import NDTConfig, NDTImplicitMap
 from traversability.ndt_planner import plan_ndt_global
@@ -51,6 +51,7 @@ def run_pipeline() -> dict:
     global_result = plan_ndt_global(ndt_map, start, goal)
     global_xy = [(x, y) for x, y, _ in global_result.path_xyz]
     terrain_map = ImplicitTerrainMap(analyze_layer("paper_pipeline", height, obstacle, resolution, origin))
+    traversability_guide = NDTLocalTraversabilityGuide.from_ndt_map(ndt_map)
     local_result = plan_hybrid_local(
         terrain_map,
         start=(global_xy[0][0], global_xy[0][1], 0.0),
@@ -63,6 +64,7 @@ def run_pipeline() -> dict:
             max_iterations=7000,
             global_waypoint_limit=22,
         ),
+        global_traversability=traversability_guide,
     )
     return {
         "height": height,
@@ -73,6 +75,7 @@ def run_pipeline() -> dict:
         "global": global_result,
         "local": local_result,
         "global_xy": global_xy,
+        "shared_traversable_voxels": len(traversability_guide.traversable_keys),
     }
 
 
@@ -129,6 +132,7 @@ def write_outputs(output_dir: Path, result: dict) -> None:
                 "global_max_traversal_cost",
                 "local_mean_risk",
                 "local_min_stability",
+                "shared_traversable_voxels",
             ]
         )
         writer.writerow(
@@ -144,6 +148,7 @@ def write_outputs(output_dir: Path, result: dict) -> None:
                 f"{global_result.max_traversal_cost:.4f}",
                 f"{local_result.mean_risk:.4f}",
                 f"{local_result.min_stability:.4f}",
+                result["shared_traversable_voxels"],
             ]
         )
 
@@ -195,6 +200,7 @@ def print_summary(output_dir: Path, result: dict) -> None:
     table.add_row("global path length", f"{result['global'].path_length_m:.2f} m")
     table.add_row("local path length", f"{result['local'].path_length_m:.2f} m")
     table.add_row("local min stability", f"{result['local'].min_stability:.3f}")
+    table.add_row("shared traversable voxels", str(result["shared_traversable_voxels"]))
     Console().print(table)
     Console().print(f"[green]Wrote paper pipeline outputs to[/green] {output_dir.resolve()}")
 

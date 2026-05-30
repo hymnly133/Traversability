@@ -34,6 +34,7 @@ def main() -> None:
     require(float(summary["global_max_traversal_cost"]) < 0.82, "global path crossed untraversable cost")
     require(float(summary["local_mean_risk"]) < 0.65, "local path risk too high")
     require(float(summary["local_min_stability"]) >= 0.28, "local path stability too low")
+    require(int(summary["shared_traversable_voxels"]) >= 150, "global traversability was not shared with local planning")
     require(len(global_path) >= 8, "global path has too few waypoints")
     require(len(local_path) >= 6, "local path has too few states")
     require(path_bends_around_obstacle(global_path), "global path did not bend around the obstacle")

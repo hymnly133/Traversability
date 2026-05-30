@@ -10,7 +10,7 @@ import numpy as np
 from rich.console import Console
 from rich.table import Table
 
-from traversability.hybrid_local_planner import HybridLocalPlannerConfig, plan_hybrid_local
+from traversability.hybrid_local_planner import HybridLocalPlannerConfig, NDTLocalTraversabilityGuide, plan_hybrid_local
 from traversability.implicit_map import ImplicitTerrainMap
 from traversability.ndt_map import NDTConfig, NDTImplicitMap
 from traversability.ndt_planner import plan_ndt_global
@@ -57,16 +57,20 @@ def run_receding(cycles: int, step_distance: float) -> dict:
         global_result = plan_ndt_global(ndt_map, (current[0], current[1], 0.0), (goal[0], goal[1], 0.0))
         global_xy = [(x, y) for x, y, _ in global_result.path_xyz]
         terrain_map = ImplicitTerrainMap(analyze_layer("paper_receding", height, obstacle, resolution, origin))
+        traversability_guide = NDTLocalTraversabilityGuide.from_ndt_map(ndt_map)
         local_result = plan_hybrid_local(
             terrain_map,
             start=(current[0], current[1], yaw),
             global_path=global_xy,
             config=hybrid_config(),
+            global_traversability=traversability_guide,
         )
         if global_xy:
             planned_paths.append(global_xy)
         if not global_result.success or not local_result.success or len(local_result.path) < 2:
-            cycle_rows.append(cycle_row(cycle, global_result, local_result, current, goal, failed=True))
+            cycle_rows.append(
+                cycle_row(cycle, global_result, local_result, current, goal, len(traversability_guide.traversable_keys), failed=True)
+            )
             break
 
         local_xy = [(x, y) for x, y, _ in local_result.path]
@@ -75,7 +79,9 @@ def run_receding(cycles: int, step_distance: float) -> dict:
         current = next_xy
         yaw = next_yaw
         trajectory.append((current[0], current[1], yaw))
-        cycle_rows.append(cycle_row(cycle, global_result, local_result, current, goal, failed=False))
+        cycle_rows.append(
+            cycle_row(cycle, global_result, local_result, current, goal, len(traversability_guide.traversable_keys), failed=False)
+        )
         if math.dist(current, goal) <= step_distance:
             trajectory.append((goal[0], goal[1], yaw))
             break
@@ -141,7 +147,7 @@ def yaw_from_path(path: list[tuple[float, float, float]], point: tuple[float, fl
     return math.atan2(b[1] - a[1], b[0] - a[0])
 
 
-def cycle_row(cycle, global_result, local_result, current, goal, failed: bool) -> dict:
+def cycle_row(cycle, global_result, local_result, current, goal, shared_traversable_voxels: int, failed: bool) -> dict:
     return {
         "cycle": cycle,
         "success": int(not failed and global_result.success and local_result.success),
@@ -153,6 +159,7 @@ def cycle_row(cycle, global_result, local_result, current, goal, failed: bool) -
         "local_path_length_m": local_result.path_length_m,
         "local_mean_risk": local_result.mean_risk,
         "local_min_stability": local_result.min_stability,
+        "shared_traversable_voxels": shared_traversable_voxels,
         "distance_to_goal_m": math.dist(current, goal),
     }
 
@@ -170,6 +177,7 @@ def write_outputs(output_dir: Path, result: dict) -> None:
             "local_path_length_m",
             "local_mean_risk",
             "local_min_stability",
+            "shared_traversable_voxels",
             "distance_to_goal_m",
         ]
         writer = csv.DictWriter(file, fieldnames=fieldnames)

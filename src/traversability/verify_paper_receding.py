@@ -31,6 +31,7 @@ def main() -> None:
     require(float(rows[-1]["distance_to_goal_m"]) <= 1.6, "final distance remains too large for receding demo")
     require(max(float(row["local_mean_risk"]) for row in rows) <= 0.45, "local path risk too high")
     require(min(float(row["local_min_stability"]) for row in rows) >= 0.80, "local path stability too low")
+    require(min(int(float(row["shared_traversable_voxels"])) for row in rows) >= 150, "global traversability was not shared")
     require(any(float(row["global_path_length_m"]) < float(rows[0]["global_path_length_m"]) for row in rows[2:]), "post-update global path was not recomputed")
     require(path_moves_smoothly(trajectory), "executed trajectory contains an implausible jump")
 

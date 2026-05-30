@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from traversability.implicit_map import ImplicitTerrainMap
+from traversability.ndt_map import NDTImplicitMap
 from traversability.planner import polyline_length, resample_polyline
 from traversability.tracked_stability import estimate_tracked_configuration_stability
 
@@ -27,6 +28,34 @@ class HybridLocalPlannerConfig:
     max_risk: float = 0.92
     min_stability: float = 0.30
     global_waypoint_limit: int = 24
+    global_traversability_radius_cells: int = 1
+
+
+@dataclass(frozen=True)
+class NDTLocalTraversabilityGuide:
+    """Local query facade for traversability shared from the global NDT layer."""
+
+    ndt_map: NDTImplicitMap
+    traversable_keys: frozenset[tuple[int, int, int]]
+
+    @classmethod
+    def from_ndt_map(cls, ndt_map: NDTImplicitMap) -> "NDTLocalTraversabilityGuide":
+        metrics = ndt_map.compute_metrics()
+        traversable = frozenset(key for key, metric in metrics.items() if np.isfinite(metric.traversal_cost))
+        return cls(ndt_map=ndt_map, traversable_keys=traversable)
+
+    def is_traversable(self, xy: tuple[float, float], z: float, radius_cells: int = 1) -> bool:
+        key = self.key_from_xyz((xy[0], xy[1], z))
+        for dx in range(-radius_cells, radius_cells + 1):
+            for dy in range(-radius_cells, radius_cells + 1):
+                for dz in range(-radius_cells, radius_cells + 1):
+                    if (key[0] + dx, key[1] + dy, key[2] + dz) in self.traversable_keys:
+                        return True
+        return False
+
+    def key_from_xyz(self, xyz: tuple[float, float, float]) -> tuple[int, int, int]:
+        index = np.floor((np.asarray(xyz, dtype=np.float64) - self.ndt_map.origin) / self.ndt_map.config.voxel_size)
+        return int(index[0]), int(index[1]), int(index[2])
 
 
 @dataclass(frozen=True)
@@ -52,6 +81,7 @@ def plan_hybrid_local(
     start: tuple[float, float, float],
     global_path: list[tuple[float, float]],
     config: HybridLocalPlannerConfig | None = None,
+    global_traversability: NDTLocalTraversabilityGuide | None = None,
 ) -> HybridLocalPlanningResult:
     config = config or HybridLocalPlannerConfig()
     begin = time.perf_counter()
@@ -87,6 +117,12 @@ def plan_hybrid_local(
                 continue
             query = terrain_map.query((successor.x, successor.y))
             if query.obstacle or query.risk > config.max_risk:
+                continue
+            if global_traversability is not None and not global_traversability.is_traversable(
+                (successor.x, successor.y),
+                query.height,
+                config.global_traversability_radius_cells,
+            ):
                 continue
             stability = estimate_tracked_configuration_stability(terrain_map, (successor.x, successor.y), successor.yaw)
             if not stability.feasible or stability.stability < config.min_stability:
