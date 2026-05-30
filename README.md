@@ -22,7 +22,9 @@ DOI: 10.1109/TRO.2025.3577015
 - 多层/多分辨率 terrain pyramid
 - 坡度、粗糙度、局部台阶和障碍物 margin 代价
 - 粗到细 A* 路径规划
-- 路径稳定性采样和风险验证
+- 矩形机器人 footprint 的 configuration-stability estimation
+- 局部迭代几何平滑和风险验证
+- 滚动窗口实时重规划 benchmark，包含动态障碍注入
 - CSV 与 PNG 可视化输出
 
 ## 环境
@@ -63,6 +65,24 @@ uv pip install -e .
 ```
 
 验证项包括：规划成功、最大风险不超过阈值、最低稳定性不低于阈值、路径长度合理、结果文件和图片生成成功。
+
+运行完整验证，包括滚动重规划 benchmark：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime
+```
+
+单独运行实时重规划：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.realtime_demo
+```
+
+实时 benchmark 输出：
+
+- `runs/realtime/replanning_summary.csv`
+- `runs/realtime/executed_trajectory.csv`
+- `runs/realtime/replanning.png`
 
 ## 运行 MuJoCo clearance demo
 
@@ -105,7 +125,9 @@ assets/traversability_scene.xml          # MuJoCo MJCF 场景
 src/traversability/evaluate.py           # MuJoCo clearance 评估
 src/traversability/terrain.py            # 地形生成、地形分析、多层地图
 src/traversability/planner.py            # 多层 terrain-aware A*
+src/traversability/stability.py          # 机器人 footprint 配置稳定性估计
 src/traversability/multilevel_demo.py    # 论文复刻原型入口
+src/traversability/realtime_demo.py      # 滚动窗口重规划 benchmark
 src/traversability/verify_reproduction.py # 自动验证入口
 runs/                                  # 运行后生成的结果
 ```

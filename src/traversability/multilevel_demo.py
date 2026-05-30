@@ -52,17 +52,39 @@ def write_outputs(output_dir: Path, result) -> None:
 
     with (output_dir / "stability_samples.csv").open("w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
-        writer.writerow(["x", "y", "slope", "roughness", "step", "risk", "stability"])
+        writer.writerow(
+            [
+                "x",
+                "y",
+                "yaw",
+                "slope",
+                "roughness",
+                "step",
+                "roll",
+                "pitch",
+                "support_std",
+                "min_clearance",
+                "risk",
+                "stability",
+                "feasible",
+            ]
+        )
         for sample in result.samples:
             writer.writerow(
                 [
                     f"{sample.x:.4f}",
                     f"{sample.y:.4f}",
+                    f"{sample.yaw:.4f}",
                     f"{sample.slope:.4f}",
                     f"{sample.roughness:.4f}",
                     f"{sample.step:.4f}",
+                    f"{sample.roll:.4f}",
+                    f"{sample.pitch:.4f}",
+                    f"{sample.support_std:.4f}",
+                    f"{sample.min_clearance:.4f}",
                     f"{sample.risk:.4f}",
                     f"{sample.stability:.4f}",
+                    int(sample.feasible),
                 ]
             )
 
@@ -77,6 +99,7 @@ def write_outputs(output_dir: Path, result) -> None:
                 "mean_risk",
                 "max_risk",
                 "min_stability",
+                "feasible_rate",
             ]
         )
         writer.writerow(
@@ -88,6 +111,7 @@ def write_outputs(output_dir: Path, result) -> None:
                 f"{result.mean_risk:.4f}",
                 f"{result.max_risk:.4f}",
                 f"{result.min_stability:.4f}",
+                f"{result.feasible_rate:.4f}",
             ]
         )
 
@@ -145,10 +169,10 @@ def print_summary(result, output_dir: Path) -> None:
     table.add_row("mean risk", f"{result.mean_risk:.3f}")
     table.add_row("max risk", f"{result.max_risk:.3f}")
     table.add_row("min stability", f"{result.min_stability:.3f}")
+    table.add_row("feasible rate", f"{result.feasible_rate:.1%}")
     Console().print(table)
     Console().print(f"[green]Wrote reproduction outputs to[/green] {output_dir.resolve()}")
 
 
 if __name__ == "__main__":
     main()
-

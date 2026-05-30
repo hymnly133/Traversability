@@ -26,8 +26,10 @@ This repository therefore implements an independent prototype that reproduces th
 - terrain pyramid with multiple map resolutions
 - terrain-aware risk from slope, roughness, step height, and obstacle proximity
 - coarse-to-fine A* planning through the pyramid
-- shortcut smoothing constrained by terrain risk
+- robot footprint configuration-stability estimation from sampled local support geometry
+- local iterative shortcut smoothing constrained by terrain risk and geometric feasibility
 - stability sampling along the final path
+- rolling-window replanning with a dynamic obstacle injected mid-run
 - CSV and PNG artifacts for inspection
 - verification script with numeric gates
 
@@ -44,8 +46,22 @@ Expected verification gates:
 - planner reports success
 - `max_risk <= 0.90`
 - `min_stability >= 0.08`
+- `feasible_rate >= 0.80`
 - path length is not trivially short
 - summary, path, stability samples, and visualization files exist
+
+Full verification with rolling replanning:
+
+```powershell
+.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime
+```
+
+Additional gates:
+
+- at least four replanning cycles
+- rolling success rate is at least 75%
+- rolling p95 runtime is at most 5000 ms
+- replanning summary, executed trajectory, and visualization files exist
 
 ## Known Gaps Against the Full Paper
 
@@ -53,7 +69,5 @@ The current prototype is not yet a full ROS Noetic reproduction. Missing parts i
 
 - real sensor or rosbag input
 - PCL/OpenCV/Ceres terrain mapping pipeline
-- configuration-stability estimator calibrated to a specific robot body
 - kinodynamic constraints and closed-loop tracking
 - online replanning benchmark on real large-scale rough-terrain data
-

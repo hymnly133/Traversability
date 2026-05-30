@@ -14,6 +14,7 @@ dependencies = [
 traversability-demo = "traversability.evaluate:main"
 multilevel-terrain-demo = "traversability.multilevel_demo:main"
 verify-multilevel-reproduction = "traversability.verify_reproduction:main"
+realtime-terrain-demo = "traversability.realtime_demo:main"
 
 [build-system]
 requires = ["hatchling"]
