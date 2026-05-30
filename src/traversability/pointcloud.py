@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -12,6 +13,92 @@ class PointCloudGrid:
     resolution: float
     origin_xy: tuple[float, float]
     points_per_cell: np.ndarray
+
+
+def load_point_cloud(path: Path | str) -> np.ndarray:
+    path = Path(path)
+    suffix = path.suffix.lower()
+    if suffix == ".npy":
+        points = np.load(path)
+    elif suffix in {".csv", ".xyz", ".txt"}:
+        delimiter = "," if suffix == ".csv" else None
+        points = np.loadtxt(path, delimiter=delimiter, comments="#")
+    elif suffix == ".ply":
+        points = load_ascii_ply(path)
+    else:
+        raise ValueError(f"Unsupported point cloud format: {suffix}")
+    return validate_points(points)
+
+
+def save_point_cloud(path: Path | str, points: np.ndarray) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    points = validate_points(points)
+    suffix = path.suffix.lower()
+    if suffix == ".npy":
+        np.save(path, points)
+    elif suffix == ".csv":
+        np.savetxt(path, points, delimiter=",", fmt="%.6f")
+    elif suffix in {".xyz", ".txt"}:
+        np.savetxt(path, points, fmt="%.6f")
+    elif suffix == ".ply":
+        save_ascii_ply(path, points)
+    else:
+        raise ValueError(f"Unsupported point cloud format: {suffix}")
+
+
+def validate_points(points: np.ndarray) -> np.ndarray:
+    points = np.asarray(points, dtype=np.float64)
+    if points.ndim != 2 or points.shape[1] < 3:
+        raise ValueError("point cloud must be an Nx3 array or have at least x,y,z columns")
+    points = points[:, :3]
+    finite = np.all(np.isfinite(points), axis=1)
+    points = points[finite]
+    if len(points) == 0:
+        raise ValueError("point cloud contains no finite xyz points")
+    return points
+
+
+def load_ascii_ply(path: Path) -> np.ndarray:
+    with path.open("r", encoding="utf-8") as file:
+        first = file.readline().strip()
+        if first != "ply":
+            raise ValueError("Only ASCII PLY files are supported")
+        vertex_count = None
+        is_ascii = False
+        while True:
+            line = file.readline()
+            if not line:
+                raise ValueError("PLY header ended unexpectedly")
+            stripped = line.strip()
+            if stripped == "format ascii 1.0":
+                is_ascii = True
+            elif stripped.startswith("element vertex"):
+                vertex_count = int(stripped.split()[-1])
+            elif stripped == "end_header":
+                break
+        if not is_ascii or vertex_count is None:
+            raise ValueError("Only ASCII PLY with element vertex is supported")
+        rows = []
+        for _ in range(vertex_count):
+            parts = file.readline().split()
+            if len(parts) < 3:
+                continue
+            rows.append([float(parts[0]), float(parts[1]), float(parts[2])])
+    return validate_points(np.asarray(rows, dtype=np.float64))
+
+
+def save_ascii_ply(path: Path, points: np.ndarray) -> None:
+    with path.open("w", encoding="utf-8", newline="\n") as file:
+        file.write("ply\n")
+        file.write("format ascii 1.0\n")
+        file.write(f"element vertex {len(points)}\n")
+        file.write("property float x\n")
+        file.write("property float y\n")
+        file.write("property float z\n")
+        file.write("end_header\n")
+        for x, y, z in points:
+            file.write(f"{x:.6f} {y:.6f} {z:.6f}\n")
 
 
 def sample_point_cloud_from_grid(
@@ -45,8 +132,7 @@ def point_cloud_to_elevation_grid(
     obstacle_height_percentile: float = 97.0,
     obstacle_relief_threshold: float = 1.0,
 ) -> PointCloudGrid:
-    if points.ndim != 2 or points.shape[1] != 3:
-        raise ValueError("points must be an Nx3 array")
+    points = validate_points(points)
     min_xy = np.min(points[:, :2], axis=0)
     max_xy = np.max(points[:, :2], axis=0)
     origin_xy = (float(min_xy[0]), float(min_xy[1]))

@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 from traversability.planner import plan_multilevel
-from traversability.pointcloud import point_cloud_to_elevation_grid, sample_point_cloud_from_grid
+from traversability.pointcloud import load_point_cloud, point_cloud_to_elevation_grid, sample_point_cloud_from_grid, save_point_cloud
 from traversability.terrain import generate_large_rough_terrain, make_pyramid
 
 
@@ -21,14 +21,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--size", type=int, default=160)
     parser.add_argument("--resolution", type=float, default=0.25)
     parser.add_argument("--levels", type=int, default=4)
+    parser.add_argument("--input", type=Path, default=None, help="Optional .csv/.xyz/.txt/.npy/.ply point cloud file")
+    parser.add_argument("--export-points", type=Path, default=None, help="Optional path to save the generated point cloud")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    height, obstacle, origin = generate_large_rough_terrain(args.size, args.resolution, args.seed)
-    points = sample_point_cloud_from_grid(height, obstacle, args.resolution, origin, seed=args.seed)
+    if args.input is None:
+        height, obstacle, origin = generate_large_rough_terrain(args.size, args.resolution, args.seed)
+        points = sample_point_cloud_from_grid(height, obstacle, args.resolution, origin, seed=args.seed)
+        if args.export_points is not None:
+            save_point_cloud(args.export_points, points)
+    else:
+        points = load_point_cloud(args.input)
     grid = point_cloud_to_elevation_grid(points, args.resolution)
     pyramid = make_pyramid(grid.height, grid.obstacle, grid.resolution, grid.origin_xy, levels=args.levels)
 
@@ -125,4 +132,3 @@ def print_summary(output_dir: Path, result, points: np.ndarray, grid) -> None:
 
 if __name__ == "__main__":
     main()
-

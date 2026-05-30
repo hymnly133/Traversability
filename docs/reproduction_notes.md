@@ -34,6 +34,7 @@ This repository therefore implements an independent prototype that reproduces th
 - ablation benchmark comparing multilevel planning against a single-level full-resolution baseline
 - pure-pursuit path tracking simulation with execution risk and stability checks
 - point-cloud to elevation-grid import path that approximates the PCL/SLAM map input boundary
+- external point-cloud file loading for `.csv`, `.xyz`, `.txt`, `.npy`, and ASCII `.ply`
 - multi-seed benchmark suite for aggregate success-rate, speed, risk, and feasibility statistics
 - CSV and PNG artifacts for inspection
 - verification script with numeric gates
@@ -49,6 +50,7 @@ Run:
 Expected verification gates:
 
 - implicit map grid-point and continuous-query checks pass
+- point-cloud file round-trip checks pass for CSV, XYZ, NPY, and ASCII PLY
 - planner reports success
 - `max_risk <= 0.90`
 - `min_stability >= 0.08`

@@ -103,6 +103,19 @@ uv pip install -e .
 .venv\Scripts\python.exe -m traversability.pointcloud_demo
 ```
 
+使用外部点云文件，支持 `.csv`、`.xyz`、`.txt`、`.npy`、ASCII `.ply`：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.pointcloud_demo --input path\to\cloud.xyz
+```
+
+导出 demo 生成的点云再从文件规划：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.pointcloud_demo --export-points runs\pointcloud\terrain.csv
+.venv\Scripts\python.exe -m traversability.pointcloud_demo --input runs\pointcloud\terrain.csv
+```
+
 单独运行多场景 benchmark：
 
 ```powershell
@@ -186,6 +199,7 @@ src/traversability/tracking.py           # pure-pursuit 路径跟踪仿真
 src/traversability/tracking_demo.py      # 闭环跟踪验证入口
 src/traversability/pointcloud.py         # 点云到 elevation grid 转换
 src/traversability/pointcloud_demo.py    # 点云输入规划验证入口
+src/traversability/verify_pointcloud_io.py # 点云文件 IO 验证
 src/traversability/benchmark_suite.py    # 多场景 benchmark 聚合
 src/traversability/verify_reproduction.py # 自动验证入口
 src/traversability/verify_implicit_map.py # implicit map 查询验证
