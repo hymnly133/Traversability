@@ -10,6 +10,7 @@ import numpy as np
 from traversability.implicit_map import ImplicitTerrainMap
 from traversability.stability import RobotFootprint, estimate_configuration_stability_on_map
 from traversability.terrain import TerrainLayer, TerrainPyramid, grid_to_world, world_to_grid
+from traversability.trajectory_optimizer import optimize_path
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,7 @@ class PlannerWeights:
     stability: float = 5.0
     corridor_radius_cells: int = 9
     lethal_risk: float = 0.90
+    enable_optimization: bool = True
 
 
 @dataclass(frozen=True)
@@ -100,19 +102,20 @@ def plan_multilevel(
     fine_map = ImplicitTerrainMap(fine_layer)
     raw_path = [grid_to_world(fine_layer, cell) for cell in guide_cells]
     smooth_path = shortcut_path(fine_map, raw_path, max_risk=0.92)
-    samples = evaluate_stability(fine_map, smooth_path)
+    optimized_path = optimize_path(fine_map, smooth_path) if weights.enable_optimization else smooth_path
+    samples = evaluate_stability(fine_map, optimized_path)
     runtime_ms = (time.perf_counter() - begin) * 1000.0
     risks = np.array([sample.risk for sample in samples], dtype=np.float64)
     stabilities = np.array([sample.stability for sample in samples], dtype=np.float64)
     feasible_rate = float(np.mean([sample.feasible for sample in samples]))
 
     return PlanningResult(
-        path_xy=smooth_path,
+        path_xy=optimized_path,
         coarse_path_xy=[grid_to_world(pyramid.coarsest, cell) for cell in coarse_cells],
         samples=samples,
         runtime_ms=runtime_ms,
         expanded_nodes=expanded_total,
-        path_length_m=polyline_length(smooth_path),
+        path_length_m=polyline_length(optimized_path),
         mean_risk=float(np.mean(risks)),
         max_risk=float(np.max(risks)),
         min_stability=float(np.min(stabilities)),

@@ -12,7 +12,7 @@ from rich.console import Console
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Verify the multilevel terrain-aware reproduction demo.")
     parser.add_argument("--output", type=Path, default=Path("runs/multilevel_verify"))
-    parser.add_argument("--max-runtime-ms", type=float, default=5000.0)
+    parser.add_argument("--max-runtime-ms", type=float, default=6000.0)
     parser.add_argument("--max-risk", type=float, default=0.90)
     parser.add_argument("--min-stability", type=float, default=0.08)
     parser.add_argument("--min-feasible-rate", type=float, default=0.80)

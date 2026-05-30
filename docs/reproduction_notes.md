@@ -29,6 +29,7 @@ This repository therefore implements an independent prototype that reproduces th
 - coarse-to-fine A* planning through the pyramid
 - robot footprint configuration-stability estimation from sampled local support geometry
 - local iterative shortcut smoothing constrained by terrain risk and geometric feasibility
+- local trajectory optimization over length, risk, curvature, and configuration stability
 - stability sampling along the final path
 - rolling-window replanning with a dynamic obstacle injected mid-run
 - ablation benchmark comparing multilevel planning against a single-level full-resolution baseline

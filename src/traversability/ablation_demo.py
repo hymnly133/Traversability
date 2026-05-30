@@ -41,7 +41,7 @@ def main() -> None:
     start = (origin[0] + 2.5, origin[1] + 3.0)
     goal = (origin[0] + args.size * args.resolution - 3.0, origin[1] + args.size * args.resolution - 4.0)
 
-    multilevel = plan_multilevel(pyramid, start, goal)
+    multilevel = plan_multilevel(pyramid, start, goal, weights=PlannerWeights(enable_optimization=False))
     single = plan_single_level(pyramid.finest, start, goal)
 
     write_outputs(args.output, multilevel, single)
@@ -204,4 +204,3 @@ def print_summary(output_dir: Path, multilevel, single: dict) -> None:
 
 if __name__ == "__main__":
     main()
-

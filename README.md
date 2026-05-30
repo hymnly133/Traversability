@@ -25,6 +25,7 @@ DOI: 10.1109/TRO.2025.3577015
 - 粗到细 A* 路径规划
 - 矩形机器人 footprint 的 configuration-stability estimation
 - 局部迭代几何平滑和风险验证
+- 局部轨迹优化，可在路径质量模式启用，在实时 benchmark 中关闭以保持低延迟
 - 滚动窗口实时重规划 benchmark，包含动态障碍注入
 - CSV 与 PNG 可视化输出
 
@@ -218,6 +219,7 @@ src/traversability/evaluate.py           # MuJoCo clearance 评估
 src/traversability/terrain.py            # 地形生成、地形分析、多层地图
 src/traversability/implicit_map.py       # 连续地形查询/隐式地图 facade
 src/traversability/planner.py            # 多层 terrain-aware A*
+src/traversability/trajectory_optimizer.py # 局部轨迹优化
 src/traversability/stability.py          # 机器人 footprint 配置稳定性估计
 src/traversability/multilevel_demo.py    # 论文复刻原型入口
 src/traversability/realtime_demo.py      # 滚动窗口重规划 benchmark

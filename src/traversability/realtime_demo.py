@@ -10,7 +10,7 @@ import numpy as np
 from rich.console import Console
 from rich.table import Table
 
-from traversability.planner import PlanningResult, plan_multilevel
+from traversability.planner import PlannerWeights, PlanningResult, plan_multilevel
 from traversability.terrain import generate_large_rough_terrain, make_pyramid
 
 
@@ -43,7 +43,7 @@ def main() -> None:
         if cycle == args.cycles // 2:
             add_dynamic_block(dynamic_obstacle, origin, args.resolution, center=(0.5, 5.5), radius_m=1.1)
         pyramid = make_pyramid(height, dynamic_obstacle, args.resolution, origin, levels=args.levels)
-        result = plan_multilevel(pyramid, current, goal)
+        result = plan_multilevel(pyramid, current, goal, weights=PlannerWeights(enable_optimization=False))
         results.append(result)
         if not result.success or len(result.path_xy) < 2:
             break

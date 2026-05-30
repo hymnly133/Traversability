@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from traversability.ablation_demo import plan_single_level
-from traversability.planner import plan_multilevel
+from traversability.planner import PlannerWeights, plan_multilevel
 from traversability.terrain import generate_large_rough_terrain, make_pyramid
 
 
@@ -38,7 +38,7 @@ def run_scenario(seed: int, size: int, resolution: float, levels: int) -> dict:
     pyramid = make_pyramid(height, obstacle, resolution, origin, levels=levels)
     start = (origin[0] + 2.5, origin[1] + 3.0)
     goal = (origin[0] + size * resolution - 3.0, origin[1] + size * resolution - 4.0)
-    multilevel = plan_multilevel(pyramid, start, goal)
+    multilevel = plan_multilevel(pyramid, start, goal, weights=PlannerWeights(enable_optimization=False))
     single = plan_single_level(pyramid.finest, start, goal)
 
     speedup = single["runtime_ms"] / max(multilevel.runtime_ms, 1e-9)
