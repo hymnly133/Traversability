@@ -24,6 +24,8 @@ DOI: 10.1109/TRO.2025.3577015
 - 多层/多分辨率 terrain pyramid
 - 坡度、粗糙度、sparsity、局部台阶和障碍物 margin 代价
 - checkpoint/ray-casting 风格的 terrain、collision、falling traversal risk 验证
+- 论文 IV-D 对应的 3D voxel A* 全局规划原型，代价为路径长度与 traversal cost 的组合
+- union-find connected traversable voxel set，用于把搜索限制在可通行连通体内
 - 粗到细 A* 路径规划
 - 矩形机器人 footprint 的 configuration-stability estimation
 - 局部迭代几何平滑和风险验证
@@ -80,6 +82,12 @@ uv pip install -e .
 
 ```powershell
 .venv\Scripts\python.exe -m traversability.verify_ndt_map
+```
+
+单独验证论文式 NDT traversability map 上的 3D voxel A* 全局规划：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.verify_ndt_planner
 ```
 
 运行完整验证，包括滚动重规划、ablation、路径跟踪、点云输入和多场景 benchmark：
@@ -199,6 +207,7 @@ assets/traversability_scene.xml          # MuJoCo MJCF 场景
 src/traversability/evaluate.py           # MuJoCo clearance 评估
 src/traversability/terrain.py            # 地形生成、地形分析、多层地图
 src/traversability/ndt_map.py            # 论文式 NDT implicit voxel map 与 traversal risk
+src/traversability/ndt_planner.py        # 论文式 3D voxel A* 与连通可通行体素集
 src/traversability/implicit_map.py       # 连续地形查询/隐式地图 facade
 src/traversability/planner.py            # 多层 terrain-aware A*
 src/traversability/trajectory_optimizer.py # 局部轨迹优化
@@ -215,6 +224,7 @@ src/traversability/benchmark_suite.py    # 多场景 benchmark 聚合
 src/traversability/verify_reproduction.py # 自动验证入口
 src/traversability/verify_implicit_map.py # implicit map 查询验证
 src/traversability/verify_ndt_map.py     # NDT voxel map 和论文 IV 指标验证
+src/traversability/verify_ndt_planner.py # NDT voxel global planning 验证
 runs/                                  # 运行后生成的结果
 ```
 

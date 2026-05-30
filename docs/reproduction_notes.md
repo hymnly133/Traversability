@@ -27,6 +27,8 @@ This repository therefore implements an independent prototype that reproduces th
 - implicit terrain-map facade for continuous height, slope, roughness, step, risk, and obstacle queries
 - paper-style SVD terrain metrics for roughness and slope, plus visible-neighborhood sparsity
 - checkpoint/ray-casting traversal-risk assessment split into terrain, collision, and falling risks
+- 3-D voxel A* global planning over the NDT traversability map using the paper's length-plus-traversal-cost structure
+- union-find connected traversable voxel set to restrict global search to connected traversable voxels
 - terrain pyramid with multiple map resolutions
 - terrain-aware risk from slope, roughness, step height, and obstacle proximity
 - coarse-to-fine A* planning through the pyramid
@@ -55,6 +57,7 @@ Expected verification gates:
 
 - implicit map grid-point and continuous-query checks pass
 - NDT implicit voxel-map checks pass for SVD roughness/slope, sparsity, and terrain/collision/falling traversal-risk detection
+- NDT global-planner checks pass for connected traversable voxel set construction and 3-D A* avoidance of risky voxels
 - point-cloud file round-trip checks pass for CSV, XYZ, NPY, and ASCII PLY
 - planner reports success
 - `max_risk <= 0.90`
@@ -87,7 +90,8 @@ Additional gates:
 The current prototype is not yet a full field-system reproduction. Missing parts include:
 
 - real sensor logs or field datasets
-- octree-backed online map integration and union-find connected traversable voxel set
+- octree-backed online map integration and incremental connected-set updates
+- replacing the legacy elevation-grid planner path with the NDT voxel planner in the main demo pipeline
 - kinodynamic constraints and closed-loop tracking
 - real low-level motor control and actuator limits
 - online replanning benchmark on real large-scale rough-terrain data
