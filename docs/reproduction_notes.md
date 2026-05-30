@@ -36,6 +36,7 @@ This repository therefore implements an independent prototype that reproduces th
 - point-cloud to elevation-grid import path that approximates the PCL/SLAM map input boundary
 - external point-cloud file loading for `.csv`, `.xyz`, `.txt`, `.npy`, and ASCII `.ply`
 - multi-seed benchmark suite for aggregate success-rate, speed, risk, and feasibility statistics
+- ROS Noetic catkin wrapper skeleton with an offline point-cloud planning node
 - CSV and PNG artifacts for inspection
 - verification script with numeric gates
 
@@ -61,7 +62,7 @@ Expected verification gates:
 Full verification with rolling replanning:
 
 ```powershell
-.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime --check-ablation --check-tracking --check-pointcloud --check-benchmark
+.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime --check-ablation --check-tracking --check-pointcloud --check-benchmark --check-ros-wrapper
 ```
 
 Additional gates:
@@ -76,6 +77,7 @@ Additional gates:
 - tracked trajectory max risk is at most 0.95 and feasible rate is at least 75%
 - point-cloud-derived elevation planning succeeds with max risk at most 0.90
 - benchmark suite reaches at least 95% multilevel success and at least 1.5x mean speedup
+- ROS wrapper package manifest, launch file, and offline node CLI pass structural and runtime checks
 
 ## Known Gaps Against the Full Paper
 
@@ -83,6 +85,7 @@ The current prototype is not yet a full ROS Noetic reproduction. Missing parts i
 
 - real sensor or rosbag input
 - full PCL/OpenCV/Ceres terrain mapping pipeline
+- live ROS topic subscriptions/publications beyond the current offline wrapper
 - kinodynamic constraints and closed-loop tracking
 - real low-level motor control and actuator limits
 - online replanning benchmark on real large-scale rough-terrain data

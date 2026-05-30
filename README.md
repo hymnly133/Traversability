@@ -73,10 +73,10 @@ uv pip install -e .
 .venv\Scripts\python.exe -m traversability.verify_implicit_map
 ```
 
-运行完整验证，包括滚动重规划、ablation、路径跟踪、点云输入和多场景 benchmark：
+运行完整验证，包括滚动重规划、ablation、路径跟踪、点云输入、多场景 benchmark 和 ROS wrapper：
 
 ```powershell
-.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime --check-ablation --check-tracking --check-pointcloud --check-benchmark
+.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime --check-ablation --check-tracking --check-pointcloud --check-benchmark --check-ros-wrapper
 ```
 
 单独运行实时重规划：
@@ -122,6 +122,12 @@ uv pip install -e .
 .venv\Scripts\python.exe -m traversability.benchmark_suite
 ```
 
+验证 ROS Noetic wrapper 包结构和离线节点：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.verify_ros_wrapper
+```
+
 实时 benchmark 输出：
 
 - `runs/realtime/replanning_summary.csv`
@@ -148,6 +154,27 @@ Benchmark 输出：
 
 - `runs/benchmark/benchmark_scenarios.csv`
 - `runs/benchmark/benchmark_summary.csv`
+
+## ROS Noetic wrapper
+
+仓库包含一个 ROS 包骨架：
+
+```text
+ros/traversability_planner/
+```
+
+它提供：
+
+- `package.xml`
+- `CMakeLists.txt`
+- `launch/offline_pointcloud_planner.launch`
+- `scripts/terrain_aware_planner_node.py`
+
+在 ROS 环境中可以用 launch 文件传入 `pointcloud_file`、`resolution`、`levels`、`output_dir` 参数。当前节点也支持无 ROS 的 CLI fallback：
+
+```powershell
+python ros\traversability_planner\scripts\terrain_aware_planner_node.py --pointcloud-file runs\pointcloud\terrain.csv --output-dir runs\ros_offline
+```
 
 ## 运行 MuJoCo clearance demo
 
@@ -201,6 +228,7 @@ src/traversability/pointcloud.py         # 点云到 elevation grid 转换
 src/traversability/pointcloud_demo.py    # 点云输入规划验证入口
 src/traversability/verify_pointcloud_io.py # 点云文件 IO 验证
 src/traversability/benchmark_suite.py    # 多场景 benchmark 聚合
+src/traversability/verify_ros_wrapper.py # ROS wrapper 验证
 src/traversability/verify_reproduction.py # 自动验证入口
 src/traversability/verify_implicit_map.py # implicit map 查询验证
 runs/                                  # 运行后生成的结果

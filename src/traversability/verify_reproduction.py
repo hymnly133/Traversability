@@ -22,6 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--check-tracking", action="store_true")
     parser.add_argument("--check-pointcloud", action="store_true")
     parser.add_argument("--check-benchmark", action="store_true")
+    parser.add_argument("--check-ros-wrapper", action="store_true")
     return parser.parse_args()
 
 
@@ -139,6 +140,9 @@ def main() -> None:
             check=True,
         )
         verify_benchmark_outputs(benchmark_output)
+
+    if args.check_ros_wrapper:
+        subprocess.run([sys.executable, "-m", "traversability.verify_ros_wrapper"], check=True)
 
     Console().print("[green]verification passed[/green]")
 

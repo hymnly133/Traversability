@@ -1,0 +1,5 @@
+pointcloud_file: ""
+resolution: 0.25
+levels: 4
+output_dir: "runs/ros_offline"
+
