@@ -1,0 +1,5 @@
+mujoco>=3.9
+numpy>=2.2
+matplotlib>=3.10
+rich>=15.0
+

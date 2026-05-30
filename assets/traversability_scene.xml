@@ -1,0 +1,52 @@
+<mujoco model="path_traversability_demo">
+  <compiler angle="degree"/>
+  <option timestep="0.01" gravity="0 0 -9.81"/>
+
+  <default>
+    <geom solref="0.01 1" solimp="0.95 0.99 0.001" friction="0.9 0.1 0.1"/>
+  </default>
+
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512"
+             rgb1="0.82 0.84 0.82" rgb2="0.72 0.75 0.72"/>
+    <material name="ground" texture="grid" texrepeat="5 5" reflectance="0.05"/>
+    <material name="obstacle_mat" rgba="0.45 0.22 0.13 1"/>
+    <material name="wall_mat" rgba="0.25 0.26 0.28 1"/>
+    <material name="robot_mat" rgba="0.1 0.35 0.95 0.55"/>
+  </asset>
+
+  <worldbody>
+    <light name="key" pos="0 -3 4" dir="0 0 -1" diffuse="0.9 0.9 0.9"/>
+    <camera name="top" pos="0 0 5.5" quat="1 0 0 0" fovy="45"/>
+
+    <geom name="floor" type="plane" size="3 2.2 0.02" material="ground"
+          contype="0" conaffinity="0"/>
+
+    <geom name="wall_top" type="box" pos="0 1.55 0.18" size="2.8 0.06 0.18"
+          material="wall_mat"/>
+    <geom name="wall_bottom" type="box" pos="0 -1.55 0.18" size="2.8 0.06 0.18"
+          material="wall_mat"/>
+    <geom name="wall_left" type="box" pos="-2.65 0 0.18" size="0.06 1.55 0.18"
+          material="wall_mat"/>
+    <geom name="wall_right" type="box" pos="2.65 0 0.18" size="0.06 1.55 0.18"
+          material="wall_mat"/>
+
+    <geom name="obstacle_block_a" type="box" pos="-0.95 -0.10 0.22" size="0.18 0.52 0.22"
+          material="obstacle_mat"/>
+    <geom name="obstacle_block_b" type="box" pos="0.00 0.32 0.22" size="0.20 0.50 0.22"
+          material="obstacle_mat"/>
+    <geom name="obstacle_block_c" type="box" pos="0.92 -0.18 0.22" size="0.18 0.54 0.22"
+          material="obstacle_mat"/>
+    <geom name="obstacle_post_a" type="cylinder" pos="-1.55 0.70 0.22" size="0.22 0.22"
+          material="obstacle_mat"/>
+    <geom name="obstacle_post_b" type="cylinder" pos="1.55 -0.82 0.22" size="0.24 0.22"
+          material="obstacle_mat"/>
+
+    <body name="probe" pos="-2.2 0 0.08">
+      <freejoint name="root"/>
+      <geom name="robot_footprint" type="cylinder" size="0.18 0.08"
+            material="robot_mat" contype="1" conaffinity="1"/>
+    </body>
+  </worldbody>
+</mujoco>
+
