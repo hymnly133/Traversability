@@ -32,6 +32,7 @@ This repository therefore implements an independent prototype that reproduces th
 - stability sampling along the final path
 - rolling-window replanning with a dynamic obstacle injected mid-run
 - ablation benchmark comparing multilevel planning against a single-level full-resolution baseline
+- pure-pursuit path tracking simulation with execution risk and stability checks
 - CSV and PNG artifacts for inspection
 - verification script with numeric gates
 
@@ -56,7 +57,7 @@ Expected verification gates:
 Full verification with rolling replanning:
 
 ```powershell
-.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime --check-ablation
+.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime --check-ablation --check-tracking
 ```
 
 Additional gates:
@@ -67,6 +68,8 @@ Additional gates:
 - replanning summary, executed trajectory, and visualization files exist
 - multilevel planner is at least 1.5x faster than the single-level baseline in the ablation scene
 - multilevel planner expands at most two thirds as many nodes as the single-level baseline
+- tracking mean error is at most 0.20 m and final error is at most 0.55 m
+- tracked trajectory max risk is at most 0.95 and feasible rate is at least 75%
 
 ## Known Gaps Against the Full Paper
 
@@ -75,4 +78,5 @@ The current prototype is not yet a full ROS Noetic reproduction. Missing parts i
 - real sensor or rosbag input
 - PCL/OpenCV/Ceres terrain mapping pipeline
 - kinodynamic constraints and closed-loop tracking
+- real low-level motor control and actuator limits
 - online replanning benchmark on real large-scale rough-terrain data

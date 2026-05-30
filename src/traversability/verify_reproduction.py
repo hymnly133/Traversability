@@ -19,6 +19,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-path-length", type=float, default=40.0)
     parser.add_argument("--check-realtime", action="store_true")
     parser.add_argument("--check-ablation", action="store_true")
+    parser.add_argument("--check-tracking", action="store_true")
     return parser.parse_args()
 
 
@@ -94,6 +95,20 @@ def main() -> None:
         )
         verify_ablation_outputs(ablation_output)
 
+    if args.check_tracking:
+        tracking_output = args.output.parent / f"{args.output.name}_tracking"
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "traversability.tracking_demo",
+                "--output",
+                str(tracking_output),
+            ],
+            check=True,
+        )
+        verify_tracking_outputs(tracking_output)
+
     Console().print("[green]verification passed[/green]")
 
 
@@ -136,6 +151,28 @@ def verify_ablation_outputs(output: Path) -> None:
     require(expansion_ratio >= 1.5, "multilevel planner did not reduce expanded nodes enough")
     require(float(multilevel["max_risk"]) <= 0.90, "multilevel ablation risk exceeded threshold")
     require(float(multilevel["feasible_rate"]) >= 0.80, "multilevel ablation feasibility below threshold")
+
+
+def verify_tracking_outputs(output: Path) -> None:
+    summary_path = output / "tracking_summary.csv"
+    states_path = output / "tracking_states.csv"
+    image_path = output / "tracking.png"
+    require(summary_path.exists(), f"missing {summary_path}")
+    require(states_path.exists(), f"missing {states_path}")
+    require(image_path.exists() and image_path.stat().st_size > 10_000, f"missing or empty {image_path}")
+    with summary_path.open(encoding="utf-8") as file:
+        summary = next(csv.DictReader(file))
+    with states_path.open(encoding="utf-8") as file:
+        states = list(csv.DictReader(file))
+    require(summary["plan_success"] == "1", "tracking demo planner failed")
+    require(summary["tracking_success"] == "1", "path tracking failed")
+    require(float(summary["mean_error_m"]) <= 0.20, "tracking mean error too high")
+    require(float(summary["max_error_m"]) <= 0.60, "tracking max error too high")
+    require(float(summary["final_error_m"]) <= 0.55, "tracking final error too high")
+    require(float(summary["max_risk"]) <= 0.95, "tracking max risk exceeded threshold")
+    require(float(summary["min_stability"]) >= 0.08, "tracking minimum stability below threshold")
+    require(float(summary["feasible_rate"]) >= 0.75, "tracking feasible rate below threshold")
+    require(len(states) >= 100, "tracking state trajectory is too short")
 
 
 if __name__ == "__main__":

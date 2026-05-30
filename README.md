@@ -73,10 +73,10 @@ uv pip install -e .
 .venv\Scripts\python.exe -m traversability.verify_implicit_map
 ```
 
-运行完整验证，包括滚动重规划 benchmark：
+运行完整验证，包括滚动重规划、ablation 和路径跟踪：
 
 ```powershell
-.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime --check-ablation
+.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime --check-ablation --check-tracking
 ```
 
 单独运行实时重规划：
@@ -91,6 +91,12 @@ uv pip install -e .
 .venv\Scripts\python.exe -m traversability.ablation_demo
 ```
 
+单独运行闭环路径跟踪仿真：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.tracking_demo
+```
+
 实时 benchmark 输出：
 
 - `runs/realtime/replanning_summary.csv`
@@ -101,6 +107,12 @@ Ablation 输出：
 
 - `runs/ablation/ablation_summary.csv`
 - `runs/ablation/ablation.png`
+
+Tracking 输出：
+
+- `runs/tracking/tracking_summary.csv`
+- `runs/tracking/tracking_states.csv`
+- `runs/tracking/tracking.png`
 
 ## 运行 MuJoCo clearance demo
 
@@ -148,6 +160,8 @@ src/traversability/stability.py          # 机器人 footprint 配置稳定性�
 src/traversability/multilevel_demo.py    # 论文复刻原型入口
 src/traversability/realtime_demo.py      # 滚动窗口重规划 benchmark
 src/traversability/ablation_demo.py      # 多层规划 vs 单层规划对比实验
+src/traversability/tracking.py           # pure-pursuit 路径跟踪仿真
+src/traversability/tracking_demo.py      # 闭环跟踪验证入口
 src/traversability/verify_reproduction.py # 自动验证入口
 src/traversability/verify_implicit_map.py # implicit map 查询验证
 runs/                                  # 运行后生成的结果
