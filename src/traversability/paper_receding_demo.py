@@ -168,6 +168,8 @@ def cycle_row(cycle, global_result, local_result, current, goal, shared_traversa
         "shared_traversable_voxels": shared_traversable_voxels,
         "global_traversability_checks": local_result.global_traversability_checks,
         "global_normal_initializations": local_result.global_normal_initializations,
+        "local_traversable_voxels": local_result.local_traversable_voxels,
+        "local_traversable_queries": local_result.local_traversable_queries,
         "distance_to_goal_m": math.dist(current, goal),
     }
 
@@ -194,6 +196,8 @@ def write_outputs(output_dir: Path, result: dict) -> None:
             "shared_traversable_voxels",
             "global_traversability_checks",
             "global_normal_initializations",
+            "local_traversable_voxels",
+            "local_traversable_queries",
             "distance_to_goal_m",
         ]
         writer = csv.DictWriter(file, fieldnames=fieldnames)

@@ -29,6 +29,7 @@ class HybridLocalPlannerConfig:
     min_stability: float = 0.30
     global_waypoint_limit: int = 24
     global_traversability_radius_cells: int = 1
+    local_traversable_margin: float = 0.45
     smoothing_iterations: int = 2
     smoothing_offsets: tuple[float, ...] = (-0.12, 0.0, 0.12)
 
@@ -82,6 +83,46 @@ class NDTLocalTraversabilityGuide:
 
 
 @dataclass(frozen=True)
+class LocalTraversableSet:
+    """Robot-centric local traversable set derived from the global NDT layer."""
+
+    guide: NDTLocalTraversabilityGuide
+    keys: tuple[tuple[int, int, int], ...]
+    centers: np.ndarray
+    radius: float
+
+    @classmethod
+    def from_global(
+        cls,
+        guide: NDTLocalTraversabilityGuide,
+        center_xy: tuple[float, float],
+        radius: float,
+    ) -> "LocalTraversableSet":
+        selected = []
+        selected_centers = []
+        for key in guide.traversable_keys:
+            center = guide.ndt_map.voxel_center(key)
+            if math.dist(center[:2], center_xy) <= radius:
+                selected.append(key)
+                selected_centers.append(center)
+        centers = np.asarray(selected_centers, dtype=np.float64) if selected_centers else np.empty((0, 3), dtype=np.float64)
+        return cls(guide=guide, keys=tuple(selected), centers=centers, radius=radius)
+
+    def nearest_key(self, xy: tuple[float, float], z: float, max_distance: float) -> tuple[int, int, int] | None:
+        if len(self.centers) == 0:
+            return None
+        point = np.array([xy[0], xy[1], z], dtype=np.float64)
+        distances = np.linalg.norm(self.centers - point, axis=1)
+        index = int(np.argmin(distances))
+        if float(distances[index]) > max_distance:
+            return None
+        return self.keys[index]
+
+    def normal_for_key(self, key: tuple[int, int, int] | None) -> np.ndarray | None:
+        return self.guide.normals.get(key) if key is not None else None
+
+
+@dataclass(frozen=True)
 class HybridState:
     x: float
     y: float
@@ -106,6 +147,8 @@ class HybridLocalPlanningResult:
     success: bool
     global_traversability_checks: int = 0
     global_normal_initializations: int = 0
+    local_traversable_voxels: int = 0
+    local_traversable_queries: int = 0
 
 
 def plan_hybrid_local(
@@ -133,6 +176,16 @@ def plan_hybrid_local(
     best_goal_distance = math.dist(start[:2], local_goal)
     global_traversability_checks = 0
     global_normal_initializations = 0
+    local_traversable_queries = 0
+    local_traversable_set = (
+        LocalTraversableSet.from_global(
+            global_traversability,
+            start[:2],
+            config.local_window_radius + config.local_traversable_margin,
+        )
+        if global_traversability is not None
+        else None
+    )
 
     while frontier and expanded < config.max_iterations:
         _, current_key = heapq.heappop(frontier)
@@ -153,7 +206,9 @@ def plan_hybrid_local(
                 global_traversability_checks,
                 global_normal_initializations,
                 global_traversability,
+                local_traversable_set,
                 config.global_traversability_radius_cells,
+                local_traversable_queries,
                 config,
             )
 
@@ -165,16 +220,18 @@ def plan_hybrid_local(
             if query.obstacle or query.risk > config.max_risk:
                 continue
             initial_normal = None
-            if global_traversability is not None:
+            if local_traversable_set is not None:
                 global_traversability_checks += 1
-                traversable_key = global_traversability.nearest_traversable_key(
+                local_traversable_queries += 1
+                max_distance = max(config.global_traversability_radius_cells, 1) * global_traversability.ndt_map.config.voxel_size * math.sqrt(3.0)
+                traversable_key = local_traversable_set.nearest_key(
                     (successor.x, successor.y),
                     query.height,
-                    config.global_traversability_radius_cells,
+                    max_distance,
                 )
                 if traversable_key is None:
                     continue
-                initial_normal = global_traversability.normals.get(traversable_key)
+                initial_normal = local_traversable_set.normal_for_key(traversable_key)
                 if initial_normal is not None:
                     global_normal_initializations += 1
             stability = estimate_tracked_configuration_stability(
@@ -211,7 +268,9 @@ def plan_hybrid_local(
             global_traversability_checks,
             global_normal_initializations,
             global_traversability,
+            local_traversable_set,
             config.global_traversability_radius_cells,
+            local_traversable_queries,
             config,
         )
     return empty_result(begin, expanded)
@@ -295,23 +354,21 @@ def build_result(
     global_traversability_checks: int = 0,
     global_normal_initializations: int = 0,
     global_traversability: NDTLocalTraversabilityGuide | None = None,
+    local_traversable_set: LocalTraversableSet | None = None,
     global_traversability_radius_cells: int = 1,
+    local_traversable_queries: int = 0,
     config: HybridLocalPlannerConfig | None = None,
 ) -> HybridLocalPlanningResult:
     config = config or HybridLocalPlannerConfig()
     state_path = reconstruct_path(states, came_from, goal_key)
     raw_path = [(state.x, state.y, state.yaw) for state in state_path]
-    waypoint_path = smooth_hybrid_path(terrain_map, raw_path, config, global_traversability, global_traversability_radius_cells)
+    waypoint_path = smooth_hybrid_path(terrain_map, raw_path, config, global_traversability, local_traversable_set, global_traversability_radius_cells)
     path = densify_hybrid_path(waypoint_path, config.step_length)
     risks = []
     stabilities = []
     for x, y, yaw in path:
         query = terrain_map.query((x, y))
-        initial_normal = (
-            global_traversability.normal_at((x, y), query.height, global_traversability_radius_cells)
-            if global_traversability is not None
-            else None
-        )
+        initial_normal = local_normal_at(local_traversable_set, global_traversability, (x, y), query.height, global_traversability_radius_cells)
         stability = estimate_tracked_configuration_stability(
             terrain_map,
             (x, y),
@@ -337,6 +394,8 @@ def build_result(
         success=len(path) >= 2,
         global_traversability_checks=global_traversability_checks,
         global_normal_initializations=global_normal_initializations,
+        local_traversable_voxels=len(local_traversable_set.keys) if local_traversable_set is not None else 0,
+        local_traversable_queries=local_traversable_queries,
     )
 
 
@@ -345,11 +404,12 @@ def smooth_hybrid_path(
     path: list[tuple[float, float, float]],
     config: HybridLocalPlannerConfig,
     global_traversability: NDTLocalTraversabilityGuide | None,
+    local_traversable_set: LocalTraversableSet | None,
     global_traversability_radius_cells: int,
 ) -> list[tuple[float, float, float]]:
     if len(path) <= 2 or config.smoothing_iterations <= 0:
         return path
-    smoothed = shortcut_hybrid_path(terrain_map, path, config, global_traversability, global_traversability_radius_cells)
+    smoothed = shortcut_hybrid_path(terrain_map, path, config, global_traversability, local_traversable_set, global_traversability_radius_cells)
     for _ in range(config.smoothing_iterations):
         changed = False
         for index in range(1, len(smoothed) - 1):
@@ -368,6 +428,7 @@ def smooth_hybrid_path(
                     next_state,
                     config,
                     global_traversability,
+                    local_traversable_set,
                     global_traversability_radius_cells,
                 ):
                     continue
@@ -388,6 +449,7 @@ def shortcut_hybrid_path(
     path: list[tuple[float, float, float]],
     config: HybridLocalPlannerConfig,
     global_traversability: NDTLocalTraversabilityGuide | None,
+    local_traversable_set: LocalTraversableSet | None,
     global_traversability_radius_cells: int,
 ) -> list[tuple[float, float, float]]:
     if len(path) <= 2:
@@ -404,6 +466,7 @@ def shortcut_hybrid_path(
                 path[next_index],
                 config,
                 global_traversability,
+                local_traversable_set,
                 global_traversability_radius_cells,
             ):
                 break
@@ -420,6 +483,7 @@ def candidate_is_safe(
     next_state: tuple[float, float, float],
     config: HybridLocalPlannerConfig,
     global_traversability: NDTLocalTraversabilityGuide | None,
+    local_traversable_set: LocalTraversableSet | None,
     global_traversability_radius_cells: int,
 ) -> bool:
     query = terrain_map.query(candidate[:2])
@@ -427,10 +491,10 @@ def candidate_is_safe(
         return False
     initial_normal = None
     if global_traversability is not None:
-        key = global_traversability.nearest_traversable_key(candidate[:2], query.height, global_traversability_radius_cells)
+        key = local_traversable_key(local_traversable_set, global_traversability, candidate[:2], query.height, global_traversability_radius_cells)
         if key is None:
             return False
-        initial_normal = global_traversability.normals.get(key)
+        initial_normal = local_traversable_set.normal_for_key(key) if local_traversable_set is not None else global_traversability.normals.get(key)
     stability = estimate_tracked_configuration_stability(
         terrain_map,
         candidate[:2],
@@ -440,8 +504,8 @@ def candidate_is_safe(
     return (
         stability.feasible
         and stability.stability >= config.min_stability
-        and segment_is_safe(terrain_map, previous, candidate, config, global_traversability, global_traversability_radius_cells)
-        and segment_is_safe(terrain_map, candidate, next_state, config, global_traversability, global_traversability_radius_cells)
+        and segment_is_safe(terrain_map, previous, candidate, config, global_traversability, local_traversable_set, global_traversability_radius_cells)
+        and segment_is_safe(terrain_map, candidate, next_state, config, global_traversability, local_traversable_set, global_traversability_radius_cells)
     )
 
 
@@ -451,6 +515,7 @@ def segment_is_safe(
     end: tuple[float, float, float],
     config: HybridLocalPlannerConfig,
     global_traversability: NDTLocalTraversabilityGuide | None,
+    local_traversable_set: LocalTraversableSet | None,
     global_traversability_radius_cells: int,
 ) -> bool:
     distance = math.dist(start[:2], end[:2])
@@ -466,10 +531,10 @@ def segment_is_safe(
             return False
         initial_normal = None
         if global_traversability is not None:
-            key = global_traversability.nearest_traversable_key(xy, query.height, global_traversability_radius_cells)
+            key = local_traversable_key(local_traversable_set, global_traversability, xy, query.height, global_traversability_radius_cells)
             if key is None:
                 return False
-            initial_normal = global_traversability.normals.get(key)
+            initial_normal = local_traversable_set.normal_for_key(key) if local_traversable_set is not None else global_traversability.normals.get(key)
         stability = estimate_tracked_configuration_stability(terrain_map, xy, yaw, initial_normal=initial_normal)
         if not stability.feasible or stability.stability < config.min_stability:
             return False
@@ -482,6 +547,7 @@ def dense_segment_is_safe(
     end: tuple[float, float, float],
     config: HybridLocalPlannerConfig,
     global_traversability: NDTLocalTraversabilityGuide | None,
+    local_traversable_set: LocalTraversableSet | None,
     global_traversability_radius_cells: int,
 ) -> bool:
     distance = math.dist(start[:2], end[:2])
@@ -495,10 +561,10 @@ def dense_segment_is_safe(
             return False
         initial_normal = None
         if global_traversability is not None:
-            key = global_traversability.nearest_traversable_key(xy, query.height, global_traversability_radius_cells)
+            key = local_traversable_key(local_traversable_set, global_traversability, xy, query.height, global_traversability_radius_cells)
             if key is None:
                 return False
-            initial_normal = global_traversability.normals.get(key)
+            initial_normal = local_traversable_set.normal_for_key(key) if local_traversable_set is not None else global_traversability.normals.get(key)
         stability = estimate_tracked_configuration_stability(terrain_map, xy, yaw, initial_normal=initial_normal)
         if not stability.feasible or stability.stability < config.min_stability:
             return False
@@ -576,6 +642,34 @@ def heading_change(
     return abs(normalize_angle(heading_b - heading_a))
 
 
+def local_traversable_key(
+    local_traversable_set: LocalTraversableSet | None,
+    global_traversability: NDTLocalTraversabilityGuide,
+    xy: tuple[float, float],
+    z: float,
+    radius_cells: int,
+) -> tuple[int, int, int] | None:
+    if local_traversable_set is not None:
+        max_distance = max(radius_cells, 1) * global_traversability.ndt_map.config.voxel_size * math.sqrt(3.0)
+        return local_traversable_set.nearest_key(xy, z, max_distance)
+    return global_traversability.nearest_traversable_key(xy, z, radius_cells)
+
+
+def local_normal_at(
+    local_traversable_set: LocalTraversableSet | None,
+    global_traversability: NDTLocalTraversabilityGuide | None,
+    xy: tuple[float, float],
+    z: float,
+    radius_cells: int,
+) -> np.ndarray | None:
+    if global_traversability is None:
+        return None
+    key = local_traversable_key(local_traversable_set, global_traversability, xy, z, radius_cells)
+    if local_traversable_set is not None:
+        return local_traversable_set.normal_for_key(key)
+    return global_traversability.normals.get(key) if key is not None else None
+
+
 def empty_result(begin: float, expanded: int = 0) -> HybridLocalPlanningResult:
     return HybridLocalPlanningResult(
         path=[],
@@ -592,6 +686,8 @@ def empty_result(begin: float, expanded: int = 0) -> HybridLocalPlanningResult:
         curvature_cost=float("inf"),
         raw_curvature_cost=float("inf"),
         success=False,
+        local_traversable_voxels=0,
+        local_traversable_queries=0,
     )
 
 

@@ -54,6 +54,12 @@ def main() -> None:
     require(min(int(float(row["shared_traversable_voxels"])) for row in rows) >= 150, "global traversability was not shared")
     require(min(int(float(row["global_traversability_checks"])) for row in rows) > 0, "local planning did not query global traversability")
     require(min(int(float(row["global_normal_initializations"])) for row in rows) > 0, "local stability did not use global normals")
+    require(min(int(float(row["local_traversable_voxels"])) for row in rows) > 0, "local traversable set was not built")
+    require(
+        all(int(float(row["local_traversable_voxels"])) <= int(float(row["shared_traversable_voxels"])) for row in rows),
+        "local traversable set was not windowed",
+    )
+    require(min(int(float(row["local_traversable_queries"])) for row in rows) > 0, "local traversable set was not queried")
     require(any(float(row["global_path_length_m"]) < float(rows[0]["global_path_length_m"]) for row in rows[2:]), "post-update global path was not recomputed")
     require(path_moves_smoothly(trajectory), "executed trajectory contains an implausible jump")
 
