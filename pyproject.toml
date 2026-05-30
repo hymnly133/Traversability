@@ -18,6 +18,7 @@ realtime-terrain-demo = "traversability.realtime_demo:main"
 verify-implicit-map = "traversability.verify_implicit_map:main"
 planner-ablation-demo = "traversability.ablation_demo:main"
 tracking-demo = "traversability.tracking_demo:main"
+pointcloud-demo = "traversability.pointcloud_demo:main"
 
 [build-system]
 requires = ["hatchling"]

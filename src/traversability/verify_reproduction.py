@@ -20,6 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--check-realtime", action="store_true")
     parser.add_argument("--check-ablation", action="store_true")
     parser.add_argument("--check-tracking", action="store_true")
+    parser.add_argument("--check-pointcloud", action="store_true")
     return parser.parse_args()
 
 
@@ -109,6 +110,20 @@ def main() -> None:
         )
         verify_tracking_outputs(tracking_output)
 
+    if args.check_pointcloud:
+        pointcloud_output = args.output.parent / f"{args.output.name}_pointcloud"
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "traversability.pointcloud_demo",
+                "--output",
+                str(pointcloud_output),
+            ],
+            check=True,
+        )
+        verify_pointcloud_outputs(pointcloud_output)
+
     Console().print("[green]verification passed[/green]")
 
 
@@ -173,6 +188,20 @@ def verify_tracking_outputs(output: Path) -> None:
     require(float(summary["min_stability"]) >= 0.08, "tracking minimum stability below threshold")
     require(float(summary["feasible_rate"]) >= 0.75, "tracking feasible rate below threshold")
     require(len(states) >= 100, "tracking state trajectory is too short")
+
+
+def verify_pointcloud_outputs(output: Path) -> None:
+    summary_path = output / "pointcloud_summary.csv"
+    image_path = output / "pointcloud_plan.png"
+    require(summary_path.exists(), f"missing {summary_path}")
+    require(image_path.exists() and image_path.stat().st_size > 10_000, f"missing or empty {image_path}")
+    with summary_path.open(encoding="utf-8") as file:
+        summary = next(csv.DictReader(file))
+    require(summary["success"] == "1", "point-cloud planning failed")
+    require(int(summary["points"]) >= 10_000, "point cloud has too few points")
+    require(int(summary["observed_cells"]) >= 10_000, "too few observed elevation cells")
+    require(float(summary["max_risk"]) <= 0.90, "point-cloud plan max risk exceeded threshold")
+    require(float(summary["feasible_rate"]) >= 0.80, "point-cloud plan feasibility below threshold")
 
 
 if __name__ == "__main__":

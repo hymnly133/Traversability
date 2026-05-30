@@ -73,10 +73,10 @@ uv pip install -e .
 .venv\Scripts\python.exe -m traversability.verify_implicit_map
 ```
 
-运行完整验证，包括滚动重规划、ablation 和路径跟踪：
+运行完整验证，包括滚动重规划、ablation、路径跟踪和点云输入：
 
 ```powershell
-.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime --check-ablation --check-tracking
+.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime --check-ablation --check-tracking --check-pointcloud
 ```
 
 单独运行实时重规划：
@@ -97,6 +97,12 @@ uv pip install -e .
 .venv\Scripts\python.exe -m traversability.tracking_demo
 ```
 
+单独运行点云到高程图再规划：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.pointcloud_demo
+```
+
 实时 benchmark 输出：
 
 - `runs/realtime/replanning_summary.csv`
@@ -113,6 +119,11 @@ Tracking 输出：
 - `runs/tracking/tracking_summary.csv`
 - `runs/tracking/tracking_states.csv`
 - `runs/tracking/tracking.png`
+
+Point-cloud 输出：
+
+- `runs/pointcloud/pointcloud_summary.csv`
+- `runs/pointcloud/pointcloud_plan.png`
 
 ## 运行 MuJoCo clearance demo
 
@@ -162,6 +173,8 @@ src/traversability/realtime_demo.py      # 滚动窗口重规划 benchmark
 src/traversability/ablation_demo.py      # 多层规划 vs 单层规划对比实验
 src/traversability/tracking.py           # pure-pursuit 路径跟踪仿真
 src/traversability/tracking_demo.py      # 闭环跟踪验证入口
+src/traversability/pointcloud.py         # 点云到 elevation grid 转换
+src/traversability/pointcloud_demo.py    # 点云输入规划验证入口
 src/traversability/verify_reproduction.py # 自动验证入口
 src/traversability/verify_implicit_map.py # implicit map 查询验证
 runs/                                  # 运行后生成的结果
