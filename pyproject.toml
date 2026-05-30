@@ -24,6 +24,7 @@ verify-pointcloud-io = "traversability.verify_pointcloud_io:main"
 verify-ndt-map = "traversability.verify_ndt_map:main"
 verify-ndt-planner = "traversability.verify_ndt_planner:main"
 verify-tracked-stability = "traversability.verify_tracked_stability:main"
+verify-wheeled-stability = "traversability.verify_wheeled_stability:main"
 
 [build-system]
 requires = ["hatchling"]

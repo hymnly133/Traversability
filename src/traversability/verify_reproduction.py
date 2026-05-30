@@ -36,6 +36,7 @@ def main() -> None:
     subprocess.run([sys.executable, "-m", "traversability.verify_ndt_map"], check=True)
     subprocess.run([sys.executable, "-m", "traversability.verify_ndt_planner"], check=True)
     subprocess.run([sys.executable, "-m", "traversability.verify_tracked_stability"], check=True)
+    subprocess.run([sys.executable, "-m", "traversability.verify_wheeled_stability"], check=True)
     subprocess.run([sys.executable, "-m", "traversability.verify_pointcloud_io"], check=True)
 
     command = [

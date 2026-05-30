@@ -29,6 +29,7 @@ DOI: 10.1109/TRO.2025.3577015
 - 粗到细 A* 路径规划
 - 矩形机器人 footprint 的 configuration-stability estimation
 - 论文 V-B 对应的 tracked robot 几何稳定性原型：主履带/摆臂 checkpoint、support polygon、CoM/ZMP 判断、摆臂支撑和 body collision
+- 论文 V-C 对应的 wheeled robot 几何稳定性原型：轮弧接触面投影、高度补偿、wheel support polygon、CoM/ZMP 判断和 body collision
 - 局部迭代几何平滑和风险验证
 - 局部轨迹优化，可在路径质量模式启用，在实时 benchmark 中关闭以保持低延迟
 - 滚动窗口实时重规划 benchmark，包含动态障碍注入
@@ -95,6 +96,12 @@ uv pip install -e .
 
 ```powershell
 .venv\Scripts\python.exe -m traversability.verify_tracked_stability
+```
+
+单独验证论文式 wheeled robot configuration-stability estimation：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.verify_wheeled_stability
 ```
 
 运行完整验证，包括滚动重规划、ablation、路径跟踪、点云输入和多场景 benchmark：
@@ -220,6 +227,7 @@ src/traversability/planner.py            # 多层 terrain-aware A*
 src/traversability/trajectory_optimizer.py # 局部轨迹优化
 src/traversability/stability.py          # 机器人 footprint 配置稳定性估计
 src/traversability/tracked_stability.py  # 论文式 tracked robot 几何稳定性估计
+src/traversability/wheeled_stability.py  # 论文式 wheeled robot 几何稳定性估计
 src/traversability/multilevel_demo.py    # 论文复刻原型入口
 src/traversability/realtime_demo.py      # 滚动窗口重规划 benchmark
 src/traversability/ablation_demo.py      # 多层规划 vs 单层规划对比实验
@@ -234,6 +242,7 @@ src/traversability/verify_implicit_map.py # implicit map 查询验证
 src/traversability/verify_ndt_map.py     # NDT voxel map 和论文 IV 指标验证
 src/traversability/verify_ndt_planner.py # NDT voxel global planning 验证
 src/traversability/verify_tracked_stability.py # tracked robot 稳定性验证
+src/traversability/verify_wheeled_stability.py # wheeled robot 稳定性验证
 runs/                                  # 运行后生成的结果
 ```
 
