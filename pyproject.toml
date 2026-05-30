@@ -20,12 +20,14 @@ planner-ablation-demo = "traversability.ablation_demo:main"
 tracking-demo = "traversability.tracking_demo:main"
 pointcloud-demo = "traversability.pointcloud_demo:main"
 benchmark-suite = "traversability.benchmark_suite:main"
+paper-pipeline-demo = "traversability.paper_pipeline_demo:main"
 verify-pointcloud-io = "traversability.verify_pointcloud_io:main"
 verify-ndt-map = "traversability.verify_ndt_map:main"
 verify-ndt-planner = "traversability.verify_ndt_planner:main"
 verify-tracked-stability = "traversability.verify_tracked_stability:main"
 verify-wheeled-stability = "traversability.verify_wheeled_stability:main"
 verify-hybrid-local-planner = "traversability.verify_hybrid_local_planner:main"
+verify-paper-pipeline = "traversability.verify_paper_pipeline:main"
 
 [build-system]
 requires = ["hatchling"]
