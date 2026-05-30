@@ -33,6 +33,7 @@ def main() -> None:
         "traversability.verify_implicit_map",
     ]
     subprocess.run(command, check=True)
+    subprocess.run([sys.executable, "-m", "traversability.verify_ndt_map"], check=True)
     subprocess.run([sys.executable, "-m", "traversability.verify_pointcloud_io"], check=True)
 
     command = [

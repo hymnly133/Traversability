@@ -23,7 +23,10 @@ At the time of this reproduction pass, that repository contains only a README wi
 This repository therefore implements an independent prototype that reproduces the paper's system shape rather than copying unavailable code:
 
 - large rough terrain represented as an elevation grid
+- NDT-style implicit voxel map prototype with per-voxel point count, mean, covariance, and neighborhood Gaussian fusion
 - implicit terrain-map facade for continuous height, slope, roughness, step, risk, and obstacle queries
+- paper-style SVD terrain metrics for roughness and slope, plus visible-neighborhood sparsity
+- checkpoint/ray-casting traversal-risk assessment split into terrain, collision, and falling risks
 - terrain pyramid with multiple map resolutions
 - terrain-aware risk from slope, roughness, step height, and obstacle proximity
 - coarse-to-fine A* planning through the pyramid
@@ -51,6 +54,7 @@ Run:
 Expected verification gates:
 
 - implicit map grid-point and continuous-query checks pass
+- NDT implicit voxel-map checks pass for SVD roughness/slope, sparsity, and terrain/collision/falling traversal-risk detection
 - point-cloud file round-trip checks pass for CSV, XYZ, NPY, and ASCII PLY
 - planner reports success
 - `max_risk <= 0.90`
@@ -83,7 +87,7 @@ Additional gates:
 The current prototype is not yet a full field-system reproduction. Missing parts include:
 
 - real sensor logs or field datasets
-- full PCL/OpenCV/Ceres terrain mapping pipeline
+- octree-backed online map integration and union-find connected traversable voxel set
 - kinodynamic constraints and closed-loop tracking
 - real low-level motor control and actuator limits
 - online replanning benchmark on real large-scale rough-terrain data

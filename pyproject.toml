@@ -21,6 +21,7 @@ tracking-demo = "traversability.tracking_demo:main"
 pointcloud-demo = "traversability.pointcloud_demo:main"
 benchmark-suite = "traversability.benchmark_suite:main"
 verify-pointcloud-io = "traversability.verify_pointcloud_io:main"
+verify-ndt-map = "traversability.verify_ndt_map:main"
 
 [build-system]
 requires = ["hatchling"]

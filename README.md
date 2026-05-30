@@ -19,9 +19,11 @@ DOI: 10.1109/TRO.2025.3577015
 我检查了作者公开仓库 `HITSZ-NRSL/terrain-aware-planning`，截至当前只有 README 和 citation，没有可运行源码。因此本项目没有复制官方实现，而是搭建一个工程化复刻原型，覆盖论文题目和关键词对应的核心链路：
 
 - 大尺度崎岖地形高程图
+- 论文 IV 对应的 NDT/implicit voxel map 原型：按体素维护点数、均值、协方差，并用邻域 Gaussian 融合做 SVD 地形分析
 - 连续坐标 implicit terrain map 查询接口
 - 多层/多分辨率 terrain pyramid
-- 坡度、粗糙度、局部台阶和障碍物 margin 代价
+- 坡度、粗糙度、sparsity、局部台阶和障碍物 margin 代价
+- checkpoint/ray-casting 风格的 terrain、collision、falling traversal risk 验证
 - 粗到细 A* 路径规划
 - 矩形机器人 footprint 的 configuration-stability estimation
 - 局部迭代几何平滑和风险验证
@@ -72,6 +74,12 @@ uv pip install -e .
 
 ```powershell
 .venv\Scripts\python.exe -m traversability.verify_implicit_map
+```
+
+单独验证论文式 NDT implicit voxel map、SVD 地形指标和 traversal risk：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.verify_ndt_map
 ```
 
 运行完整验证，包括滚动重规划、ablation、路径跟踪、点云输入和多场景 benchmark：
@@ -190,6 +198,7 @@ score = passable_fraction * (
 assets/traversability_scene.xml          # MuJoCo MJCF 场景
 src/traversability/evaluate.py           # MuJoCo clearance 评估
 src/traversability/terrain.py            # 地形生成、地形分析、多层地图
+src/traversability/ndt_map.py            # 论文式 NDT implicit voxel map 与 traversal risk
 src/traversability/implicit_map.py       # 连续地形查询/隐式地图 facade
 src/traversability/planner.py            # 多层 terrain-aware A*
 src/traversability/trajectory_optimizer.py # 局部轨迹优化
@@ -205,6 +214,7 @@ src/traversability/verify_pointcloud_io.py # 点云文件 IO 验证
 src/traversability/benchmark_suite.py    # 多场景 benchmark 聚合
 src/traversability/verify_reproduction.py # 自动验证入口
 src/traversability/verify_implicit_map.py # implicit map 查询验证
+src/traversability/verify_ndt_map.py     # NDT voxel map 和论文 IV 指标验证
 runs/                                  # 运行后生成的结果
 ```
 
