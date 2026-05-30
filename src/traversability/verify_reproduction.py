@@ -18,6 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-feasible-rate", type=float, default=0.80)
     parser.add_argument("--min-path-length", type=float, default=40.0)
     parser.add_argument("--check-realtime", action="store_true")
+    parser.add_argument("--check-ablation", action="store_true")
     return parser.parse_args()
 
 
@@ -79,6 +80,20 @@ def main() -> None:
         )
         verify_realtime_outputs(realtime_output)
 
+    if args.check_ablation:
+        ablation_output = args.output.parent / f"{args.output.name}_ablation"
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "traversability.ablation_demo",
+                "--output",
+                str(ablation_output),
+            ],
+            check=True,
+        )
+        verify_ablation_outputs(ablation_output)
+
     Console().print("[green]verification passed[/green]")
 
 
@@ -101,6 +116,26 @@ def verify_realtime_outputs(output: Path) -> None:
     p95_runtime = sorted(float(row["runtime_ms"]) for row in rows)[int(0.95 * (len(rows) - 1))]
     require(success_rate >= 0.75, "rolling replanning success rate too low")
     require(p95_runtime <= 5000.0, "rolling replanning p95 runtime too high")
+
+
+def verify_ablation_outputs(output: Path) -> None:
+    summary_path = output / "ablation_summary.csv"
+    image_path = output / "ablation.png"
+    require(summary_path.exists(), f"missing {summary_path}")
+    require(image_path.exists() and image_path.stat().st_size > 10_000, f"missing or empty {image_path}")
+    with summary_path.open(encoding="utf-8") as file:
+        rows = {row["planner"]: row for row in csv.DictReader(file)}
+    require("multilevel" in rows and "single_level" in rows, "ablation rows missing planners")
+    multilevel = rows["multilevel"]
+    single = rows["single_level"]
+    require(multilevel["success"] == "1", "multilevel ablation planner failed")
+    require(single["success"] == "1", "single-level baseline failed")
+    speedup = float(single["runtime_ms"]) / max(float(multilevel["runtime_ms"]), 1e-9)
+    expansion_ratio = int(single["expanded_nodes"]) / max(int(multilevel["expanded_nodes"]), 1)
+    require(speedup >= 1.5, "multilevel planner did not show enough runtime speedup")
+    require(expansion_ratio >= 1.5, "multilevel planner did not reduce expanded nodes enough")
+    require(float(multilevel["max_risk"]) <= 0.90, "multilevel ablation risk exceeded threshold")
+    require(float(multilevel["feasible_rate"]) >= 0.80, "multilevel ablation feasibility below threshold")
 
 
 if __name__ == "__main__":

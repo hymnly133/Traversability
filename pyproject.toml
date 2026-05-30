@@ -16,6 +16,7 @@ multilevel-terrain-demo = "traversability.multilevel_demo:main"
 verify-multilevel-reproduction = "traversability.verify_reproduction:main"
 realtime-terrain-demo = "traversability.realtime_demo:main"
 verify-implicit-map = "traversability.verify_implicit_map:main"
+planner-ablation-demo = "traversability.ablation_demo:main"
 
 [build-system]
 requires = ["hatchling"]

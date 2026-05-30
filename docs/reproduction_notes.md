@@ -31,6 +31,7 @@ This repository therefore implements an independent prototype that reproduces th
 - local iterative shortcut smoothing constrained by terrain risk and geometric feasibility
 - stability sampling along the final path
 - rolling-window replanning with a dynamic obstacle injected mid-run
+- ablation benchmark comparing multilevel planning against a single-level full-resolution baseline
 - CSV and PNG artifacts for inspection
 - verification script with numeric gates
 
@@ -55,7 +56,7 @@ Expected verification gates:
 Full verification with rolling replanning:
 
 ```powershell
-.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime
+.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime --check-ablation
 ```
 
 Additional gates:
@@ -64,6 +65,8 @@ Additional gates:
 - rolling success rate is at least 75%
 - rolling p95 runtime is at most 5000 ms
 - replanning summary, executed trajectory, and visualization files exist
+- multilevel planner is at least 1.5x faster than the single-level baseline in the ablation scene
+- multilevel planner expands at most two thirds as many nodes as the single-level baseline
 
 ## Known Gaps Against the Full Paper
 

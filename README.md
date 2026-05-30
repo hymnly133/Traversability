@@ -76,7 +76,7 @@ uv pip install -e .
 运行完整验证，包括滚动重规划 benchmark：
 
 ```powershell
-.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime
+.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime --check-ablation
 ```
 
 单独运行实时重规划：
@@ -85,11 +85,22 @@ uv pip install -e .
 .venv\Scripts\python.exe -m traversability.realtime_demo
 ```
 
+单独运行 multi-level vs single-level 对比实验：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.ablation_demo
+```
+
 实时 benchmark 输出：
 
 - `runs/realtime/replanning_summary.csv`
 - `runs/realtime/executed_trajectory.csv`
 - `runs/realtime/replanning.png`
+
+Ablation 输出：
+
+- `runs/ablation/ablation_summary.csv`
+- `runs/ablation/ablation.png`
 
 ## 运行 MuJoCo clearance demo
 
@@ -136,6 +147,7 @@ src/traversability/planner.py            # 多层 terrain-aware A*
 src/traversability/stability.py          # 机器人 footprint 配置稳定性估计
 src/traversability/multilevel_demo.py    # 论文复刻原型入口
 src/traversability/realtime_demo.py      # 滚动窗口重规划 benchmark
+src/traversability/ablation_demo.py      # 多层规划 vs 单层规划对比实验
 src/traversability/verify_reproduction.py # 自动验证入口
 src/traversability/verify_implicit_map.py # implicit map 查询验证
 runs/                                  # 运行后生成的结果
