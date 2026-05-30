@@ -4,7 +4,7 @@ import numpy as np
 
 from traversability.implicit_map import ImplicitTerrainMap
 from traversability.terrain import analyze_layer
-from traversability.tracked_stability import estimate_tracked_configuration_stability
+from traversability.tracked_stability import estimate_tracked_configuration_stability, plane_from_normal
 
 
 def main() -> None:
@@ -29,6 +29,12 @@ def main() -> None:
     require(collision.body_collision, "body obstacle should trigger collision")
     require(not collision.feasible, "body collision should make the configuration infeasible")
     require(collision.stability < flat.stability, "collision should reduce stability score")
+
+    normal = np.array([-0.24, 0.12, 1.0], dtype=np.float64)
+    local_xy = np.array([[-0.2, -0.1], [0.2, -0.1], [-0.2, 0.1], [0.2, 0.1]], dtype=np.float64)
+    heights = np.zeros(4, dtype=np.float64)
+    plane = plane_from_normal(local_xy, heights, normal)
+    require(plane[0] > 0.20 and plane[1] < -0.10, "global normal was not converted into an initial support plane")
 
     print("tracked stability verification passed")
 

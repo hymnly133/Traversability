@@ -133,6 +133,8 @@ def write_outputs(output_dir: Path, result: dict) -> None:
                 "local_mean_risk",
                 "local_min_stability",
                 "shared_traversable_voxels",
+                "global_traversability_checks",
+                "global_normal_initializations",
             ]
         )
         writer.writerow(
@@ -149,6 +151,8 @@ def write_outputs(output_dir: Path, result: dict) -> None:
                 f"{local_result.mean_risk:.4f}",
                 f"{local_result.min_stability:.4f}",
                 result["shared_traversable_voxels"],
+                local_result.global_traversability_checks,
+                local_result.global_normal_initializations,
             ]
         )
 
@@ -201,6 +205,7 @@ def print_summary(output_dir: Path, result: dict) -> None:
     table.add_row("local path length", f"{result['local'].path_length_m:.2f} m")
     table.add_row("local min stability", f"{result['local'].min_stability:.3f}")
     table.add_row("shared traversable voxels", str(result["shared_traversable_voxels"]))
+    table.add_row("global normal initializations", str(result["local"].global_normal_initializations))
     Console().print(table)
     Console().print(f"[green]Wrote paper pipeline outputs to[/green] {output_dir.resolve()}")
 

@@ -37,6 +37,7 @@ This repository therefore implements an independent prototype that reproduces th
 - wheeled-robot geometric configuration-stability prototype with cylindrical wheel contact compensation, support polygon, CoM/ZMP check, and body collision
 - Hybrid A* local-planning prototype with continuous SE(2) node expansion, motion primitives, local-window bounds, global-path heuristic guidance, traversability checks, and tracked-stability node filtering
 - global-layer traversability sharing into Hybrid A* local planning, so local node expansion is restricted by the NDT traversable voxel set before configuration-stability evaluation
+- global-layer normal-vector sharing into tracked stability estimation, so local candidate poses can initialize their support plane from the NDT terrain normal before iterative contact evaluation
 - integrated paper-style pipeline that feeds an NDT voxel global path into the Hybrid A* local planner
 - receding-horizon paper-style pipeline that repeatedly rebuilds the NDT map, replans globally, plans locally, advances execution, and handles a mid-run obstacle update
 - paper-style terrain scenario suite covering stairs, rubble, grass, hill, and bridge/trench layouts from the experiment themes
@@ -71,6 +72,7 @@ Expected verification gates:
 - paper-pipeline checks pass for NDT global planning, Hybrid local planning, artifact generation, obstacle avoidance, and local path adherence to the NDT guide
 - paper-receding checks pass for multi-cycle NDT+Hybrid replanning, trajectory progress, post-update global replanning, stability, risk, and artifact generation
 - paper-pipeline and paper-receding checks verify that NDT global traversability is shared with local Hybrid A* planning
+- paper-pipeline and paper-receding checks verify that NDT global normals initialize local tracked-stability estimation
 - paper-scenario checks pass for stairs/rubble/grass/hill/bridge NDT global planning success, cost bounds, path length, and visualization artifacts
 - `verify_paper_mainline` runs only the paper-mainline checks and intentionally excludes historical ablation, tracking, and extra benchmark demos
 - point-cloud file round-trip checks pass for CSV, XYZ, NPY, and ASCII PLY

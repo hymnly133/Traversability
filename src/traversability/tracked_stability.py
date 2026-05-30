@@ -47,11 +47,12 @@ def estimate_tracked_configuration_stability(
     xy: tuple[float, float],
     yaw: float,
     model: TrackedRobotModel | None = None,
+    initial_normal: np.ndarray | None = None,
 ) -> TrackedStabilityResult:
     model = model or TrackedRobotModel()
     local_track_points = main_track_checkpoints(model)
     heights = query_local_heights(terrain_map, xy, yaw, local_track_points)
-    plane = fit_plane(local_track_points, heights)
+    plane = plane_from_normal(local_track_points, heights, initial_normal) if initial_normal is not None else fit_plane(local_track_points, heights)
     pitch = math.atan(plane[0])
     roll = math.atan(plane[1])
 
@@ -165,6 +166,18 @@ def fit_plane(local_xy: np.ndarray, z: np.ndarray) -> np.ndarray:
     design = np.column_stack([local_xy[:, 0], local_xy[:, 1], np.ones(local_xy.shape[0])])
     plane, *_ = np.linalg.lstsq(design, z, rcond=None)
     return plane
+
+
+def plane_from_normal(local_xy: np.ndarray, z: np.ndarray, normal: np.ndarray) -> np.ndarray:
+    normal = np.asarray(normal, dtype=np.float64)
+    norm = float(np.linalg.norm(normal))
+    if norm <= 1e-9 or abs(float(normal[2])) <= 1e-6:
+        return fit_plane(local_xy, z)
+    normal = normal / norm
+    slope_x = -float(normal[0] / normal[2])
+    slope_y = -float(normal[1] / normal[2])
+    intercept = float(np.mean(z - slope_x * local_xy[:, 0] - slope_y * local_xy[:, 1]))
+    return np.array([slope_x, slope_y, intercept], dtype=np.float64)
 
 
 def evaluate_plane(plane: np.ndarray, local_xy: np.ndarray) -> np.ndarray:

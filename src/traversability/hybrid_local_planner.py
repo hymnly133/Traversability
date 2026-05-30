@@ -37,21 +37,42 @@ class NDTLocalTraversabilityGuide:
 
     ndt_map: NDTImplicitMap
     traversable_keys: frozenset[tuple[int, int, int]]
+    normals: dict[tuple[int, int, int], np.ndarray]
 
     @classmethod
     def from_ndt_map(cls, ndt_map: NDTImplicitMap) -> "NDTLocalTraversabilityGuide":
         metrics = ndt_map.compute_metrics()
         traversable = frozenset(key for key, metric in metrics.items() if np.isfinite(metric.traversal_cost))
-        return cls(ndt_map=ndt_map, traversable_keys=traversable)
+        normals = {key: metric.normal for key, metric in metrics.items()}
+        return cls(ndt_map=ndt_map, traversable_keys=traversable, normals=normals)
 
     def is_traversable(self, xy: tuple[float, float], z: float, radius_cells: int = 1) -> bool:
+        return self.nearest_traversable_key(xy, z, radius_cells) is not None
+
+    def normal_at(self, xy: tuple[float, float], z: float, radius_cells: int = 1) -> np.ndarray | None:
+        key = self.nearest_traversable_key(xy, z, radius_cells)
+        return self.normals.get(key) if key is not None else None
+
+    def nearest_traversable_key(
+        self,
+        xy: tuple[float, float],
+        z: float,
+        radius_cells: int = 1,
+    ) -> tuple[int, int, int] | None:
         key = self.key_from_xyz((xy[0], xy[1], z))
+        best_key = None
+        best_distance = float("inf")
         for dx in range(-radius_cells, radius_cells + 1):
             for dy in range(-radius_cells, radius_cells + 1):
                 for dz in range(-radius_cells, radius_cells + 1):
-                    if (key[0] + dx, key[1] + dy, key[2] + dz) in self.traversable_keys:
-                        return True
-        return False
+                    candidate = (key[0] + dx, key[1] + dy, key[2] + dz)
+                    if candidate not in self.traversable_keys:
+                        continue
+                    distance = dx * dx + dy * dy + dz * dz
+                    if distance < best_distance:
+                        best_key = candidate
+                        best_distance = distance
+        return best_key
 
     def key_from_xyz(self, xyz: tuple[float, float, float]) -> tuple[int, int, int]:
         index = np.floor((np.asarray(xyz, dtype=np.float64) - self.ndt_map.origin) / self.ndt_map.config.voxel_size)
@@ -74,6 +95,8 @@ class HybridLocalPlanningResult:
     mean_risk: float
     min_stability: float
     success: bool
+    global_traversability_checks: int = 0
+    global_normal_initializations: int = 0
 
 
 def plan_hybrid_local(
@@ -99,6 +122,8 @@ def plan_hybrid_local(
     expanded = 0
     best_key = start_key
     best_goal_distance = math.dist(start[:2], local_goal)
+    global_traversability_checks = 0
+    global_normal_initializations = 0
 
     while frontier and expanded < config.max_iterations:
         _, current_key = heapq.heappop(frontier)
@@ -109,7 +134,18 @@ def plan_hybrid_local(
             best_goal_distance = goal_distance
             best_key = current_key
         if goal_distance <= config.goal_tolerance:
-            return build_result(begin, terrain_map, states, came_from, current_key, expanded)
+            return build_result(
+                begin,
+                terrain_map,
+                states,
+                came_from,
+                current_key,
+                expanded,
+                global_traversability_checks,
+                global_normal_initializations,
+                global_traversability,
+                config.global_traversability_radius_cells,
+            )
 
         for steer in (-config.max_steer, 0.0, config.max_steer):
             successor = propagate(current, steer, config)
@@ -118,13 +154,25 @@ def plan_hybrid_local(
             query = terrain_map.query((successor.x, successor.y))
             if query.obstacle or query.risk > config.max_risk:
                 continue
-            if global_traversability is not None and not global_traversability.is_traversable(
+            initial_normal = None
+            if global_traversability is not None:
+                global_traversability_checks += 1
+                traversable_key = global_traversability.nearest_traversable_key(
+                    (successor.x, successor.y),
+                    query.height,
+                    config.global_traversability_radius_cells,
+                )
+                if traversable_key is None:
+                    continue
+                initial_normal = global_traversability.normals.get(traversable_key)
+                if initial_normal is not None:
+                    global_normal_initializations += 1
+            stability = estimate_tracked_configuration_stability(
+                terrain_map,
                 (successor.x, successor.y),
-                query.height,
-                config.global_traversability_radius_cells,
-            ):
-                continue
-            stability = estimate_tracked_configuration_stability(terrain_map, (successor.x, successor.y), successor.yaw)
+                successor.yaw,
+                initial_normal=initial_normal,
+            )
             if not stability.feasible or stability.stability < config.min_stability:
                 continue
             successor_key = state_key(successor, terrain_map.resolution, config.heading_bins)
@@ -143,7 +191,18 @@ def plan_hybrid_local(
                 came_from[successor_key] = current_key
 
     if best_goal_distance <= config.goal_tolerance * 1.6:
-        return build_result(begin, terrain_map, states, came_from, best_key, expanded)
+        return build_result(
+            begin,
+            terrain_map,
+            states,
+            came_from,
+            best_key,
+            expanded,
+            global_traversability_checks,
+            global_normal_initializations,
+            global_traversability,
+            config.global_traversability_radius_cells,
+        )
     return empty_result(begin, expanded)
 
 
@@ -222,6 +281,10 @@ def build_result(
     came_from: dict[tuple[int, int, int], tuple[int, int, int] | None],
     goal_key: tuple[int, int, int],
     expanded: int,
+    global_traversability_checks: int = 0,
+    global_normal_initializations: int = 0,
+    global_traversability: NDTLocalTraversabilityGuide | None = None,
+    global_traversability_radius_cells: int = 1,
 ) -> HybridLocalPlanningResult:
     state_path = reconstruct_path(states, came_from, goal_key)
     path = [(state.x, state.y, state.yaw) for state in state_path]
@@ -229,7 +292,17 @@ def build_result(
     stabilities = []
     for state in state_path:
         query = terrain_map.query((state.x, state.y))
-        stability = estimate_tracked_configuration_stability(terrain_map, (state.x, state.y), state.yaw)
+        initial_normal = (
+            global_traversability.normal_at((state.x, state.y), query.height, global_traversability_radius_cells)
+            if global_traversability is not None
+            else None
+        )
+        stability = estimate_tracked_configuration_stability(
+            terrain_map,
+            (state.x, state.y),
+            state.yaw,
+            initial_normal=initial_normal,
+        )
         risks.append(query.risk)
         stabilities.append(stability.stability)
     return HybridLocalPlanningResult(
@@ -240,6 +313,8 @@ def build_result(
         mean_risk=float(np.mean(risks)),
         min_stability=float(np.min(stabilities)),
         success=len(path) >= 2,
+        global_traversability_checks=global_traversability_checks,
+        global_normal_initializations=global_normal_initializations,
     )
 
 

@@ -35,6 +35,8 @@ def main() -> None:
     require(float(summary["local_mean_risk"]) < 0.65, "local path risk too high")
     require(float(summary["local_min_stability"]) >= 0.28, "local path stability too low")
     require(int(summary["shared_traversable_voxels"]) >= 150, "global traversability was not shared with local planning")
+    require(int(summary["global_traversability_checks"]) > 0, "local planning did not query global traversability")
+    require(int(summary["global_normal_initializations"]) > 0, "local stability did not use global normal initialization")
     require(len(global_path) >= 8, "global path has too few waypoints")
     require(len(local_path) >= 6, "local path has too few states")
     require(path_bends_around_obstacle(global_path), "global path did not bend around the obstacle")
