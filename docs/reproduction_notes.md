@@ -35,6 +35,7 @@ This repository therefore implements an independent prototype that reproduces th
 - robot footprint configuration-stability estimation from sampled local support geometry
 - tracked-robot geometric configuration-stability prototype with main-track/flipper checkpoints, support polygon, CoM/ZMP check, flipper support, and body collision
 - wheeled-robot geometric configuration-stability prototype with cylindrical wheel contact compensation, support polygon, CoM/ZMP check, and body collision
+- Hybrid A* local-planning prototype with continuous SE(2) node expansion, motion primitives, local-window bounds, global-path heuristic guidance, traversability checks, and tracked-stability node filtering
 - local iterative shortcut smoothing constrained by terrain risk and geometric feasibility
 - local trajectory optimization over length, risk, curvature, and configuration stability
 - stability sampling along the final path
@@ -62,6 +63,7 @@ Expected verification gates:
 - NDT global-planner checks pass for connected traversable voxel set construction and 3-D A* avoidance of risky voxels
 - tracked-stability checks pass for flat main-track support, flipper-assisted ledge support, and body-collision rejection
 - wheeled-stability checks pass for flat four-wheel support, side-step roll support, body-collision rejection, and trench infeasibility
+- Hybrid-local-planner checks pass for global-path-guided obstacle avoidance under traversability and tracked-stability constraints
 - point-cloud file round-trip checks pass for CSV, XYZ, NPY, and ASCII PLY
 - planner reports success
 - `max_risk <= 0.90`
@@ -96,7 +98,7 @@ The current prototype is not yet a full field-system reproduction. Missing parts
 - real sensor logs or field datasets
 - octree-backed online map integration and incremental connected-set updates
 - replacing the legacy elevation-grid planner path with the NDT voxel planner in the main demo pipeline
-- Hybrid A* local planning with motion primitives and global-path heuristic guidance
+- wiring Hybrid A* into the main rolling local-planning demo rather than keeping it as a focused verifier
 - kinodynamic constraints and controller-level actuator limits
 - real low-level motor control and actuator limits
 - online replanning benchmark on real large-scale rough-terrain data
