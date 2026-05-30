@@ -33,6 +33,7 @@ This repository therefore implements an independent prototype that reproduces th
 - terrain-aware risk from slope, roughness, step height, and obstacle proximity
 - coarse-to-fine A* planning through the pyramid
 - robot footprint configuration-stability estimation from sampled local support geometry
+- tracked-robot geometric configuration-stability prototype with main-track/flipper checkpoints, support polygon, CoM/ZMP check, flipper support, and body collision
 - local iterative shortcut smoothing constrained by terrain risk and geometric feasibility
 - local trajectory optimization over length, risk, curvature, and configuration stability
 - stability sampling along the final path
@@ -58,6 +59,7 @@ Expected verification gates:
 - implicit map grid-point and continuous-query checks pass
 - NDT implicit voxel-map checks pass for SVD roughness/slope, sparsity, and terrain/collision/falling traversal-risk detection
 - NDT global-planner checks pass for connected traversable voxel set construction and 3-D A* avoidance of risky voxels
+- tracked-stability checks pass for flat main-track support, flipper-assisted ledge support, and body-collision rejection
 - point-cloud file round-trip checks pass for CSV, XYZ, NPY, and ASCII PLY
 - planner reports success
 - `max_risk <= 0.90`
@@ -92,6 +94,8 @@ The current prototype is not yet a full field-system reproduction. Missing parts
 - real sensor logs or field datasets
 - octree-backed online map integration and incremental connected-set updates
 - replacing the legacy elevation-grid planner path with the NDT voxel planner in the main demo pipeline
-- kinodynamic constraints and closed-loop tracking
+- wheeled-robot configuration-stability estimation from Section V-C
+- Hybrid A* local planning with motion primitives and global-path heuristic guidance
+- kinodynamic constraints and controller-level actuator limits
 - real low-level motor control and actuator limits
 - online replanning benchmark on real large-scale rough-terrain data
