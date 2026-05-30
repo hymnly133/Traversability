@@ -60,6 +60,11 @@ def main() -> None:
         "local traversable set was not windowed",
     )
     require(min(int(float(row["local_traversable_queries"])) for row in rows) > 0, "local traversable set was not queried")
+    require(
+        all(int(float(row["local_cells"])) < int(float(row["global_cells"])) for row in rows),
+        "local map was not cropped to a sliding window",
+    )
+    require(min(int(float(row["local_cells"])) for row in rows) > 1000, "local map window is unexpectedly small")
     require(any(float(row["global_path_length_m"]) < float(rows[0]["global_path_length_m"]) for row in rows[2:]), "post-update global path was not recomputed")
     require(path_moves_smoothly(trajectory), "executed trajectory contains an implausible jump")
 

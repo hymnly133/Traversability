@@ -49,6 +49,8 @@ def main() -> None:
     require(int(summary["local_traversable_voxels"]) > 0, "local traversable set was not built")
     require(int(summary["local_traversable_voxels"]) <= int(summary["shared_traversable_voxels"]), "local traversable set was not windowed")
     require(int(summary["local_traversable_queries"]) > 0, "local traversable set was not queried")
+    require(int(summary["local_cells"]) < int(summary["global_cells"]), "local map was not cropped to a sliding window")
+    require(int(summary["local_cells"]) > 1000, "local map window is unexpectedly small")
     require(len(global_path) >= 8, "global path has too few waypoints")
     require(len(local_path) >= 6, "local path has too few states")
     require(path_bends_around_obstacle(global_path), "global path did not bend around the obstacle")

@@ -126,6 +126,32 @@ def analyze_layer(
     )
 
 
+def crop_local_window(
+    name: str,
+    height: np.ndarray,
+    obstacle: np.ndarray,
+    resolution: float,
+    origin_xy: tuple[float, float],
+    center_xy: tuple[float, float],
+    radius: float,
+) -> TerrainLayer:
+    center_col = int(round((center_xy[0] - origin_xy[0]) / resolution))
+    center_row = int(round((center_xy[1] - origin_xy[1]) / resolution))
+    radius_cells = max(1, int(np.ceil(radius / resolution)))
+    row0 = max(0, center_row - radius_cells)
+    row1 = min(height.shape[0], center_row + radius_cells + 1)
+    col0 = max(0, center_col - radius_cells)
+    col1 = min(height.shape[1], center_col + radius_cells + 1)
+    local_origin = (origin_xy[0] + col0 * resolution, origin_xy[1] + row0 * resolution)
+    return analyze_layer(
+        name=name,
+        height=height[row0:row1, col0:col1].copy(),
+        obstacle=obstacle[row0:row1, col0:col1].copy(),
+        resolution=resolution,
+        origin_xy=local_origin,
+    )
+
+
 def block_reduce(values: np.ndarray, factor: int, reducer: str) -> np.ndarray:
     rows = values.shape[0] // factor * factor
     cols = values.shape[1] // factor * factor
@@ -182,4 +208,3 @@ def grid_to_world(layer: TerrainLayer, cell: tuple[int, int]) -> tuple[float, fl
     x = layer.origin_xy[0] + col * layer.resolution
     y = layer.origin_xy[1] + row * layer.resolution
     return x, y
-

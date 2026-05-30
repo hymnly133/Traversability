@@ -16,7 +16,7 @@ from traversability.ndt_map import NDTConfig, NDTImplicitMap
 from traversability.ndt_planner import plan_ndt_global
 from traversability.paper_pipeline_demo import make_pipeline_terrain, sample_points
 from traversability.realtime_demo import advance_along_path
-from traversability.terrain import analyze_layer
+from traversability.terrain import crop_local_window
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,20 +56,40 @@ def run_receding(cycles: int, step_distance: float) -> dict:
         ndt_map = NDTImplicitMap(points, ndt_config())
         global_result = plan_ndt_global(ndt_map, (current[0], current[1], 0.0), (goal[0], goal[1], 0.0))
         global_xy = [(x, y) for x, y, _ in global_result.path_xyz]
-        terrain_map = ImplicitTerrainMap(analyze_layer("paper_receding", height, obstacle, resolution, origin))
+        local_config = hybrid_config()
+        local_layer = crop_local_window(
+            "paper_receding_local",
+            height,
+            obstacle,
+            resolution,
+            origin,
+            center_xy=current,
+            radius=local_config.local_window_radius,
+        )
+        terrain_map = ImplicitTerrainMap(local_layer)
         traversability_guide = NDTLocalTraversabilityGuide.from_ndt_map(ndt_map)
         local_result = plan_hybrid_local(
             terrain_map,
             start=(current[0], current[1], yaw),
             global_path=global_xy,
-            config=hybrid_config(),
+            config=local_config,
             global_traversability=traversability_guide,
         )
         if global_xy:
             planned_paths.append(global_xy)
         if not global_result.success or not local_result.success or len(local_result.path) < 2:
             cycle_rows.append(
-                cycle_row(cycle, global_result, local_result, current, goal, len(traversability_guide.traversable_keys), failed=True)
+                cycle_row(
+                    cycle,
+                    global_result,
+                    local_result,
+                    current,
+                    goal,
+                    len(traversability_guide.traversable_keys),
+                    int(height.size),
+                    int(local_layer.height.size),
+                    failed=True,
+                )
             )
             break
 
@@ -80,7 +100,17 @@ def run_receding(cycles: int, step_distance: float) -> dict:
         yaw = next_yaw
         trajectory.append((current[0], current[1], yaw))
         cycle_rows.append(
-            cycle_row(cycle, global_result, local_result, current, goal, len(traversability_guide.traversable_keys), failed=False)
+            cycle_row(
+                cycle,
+                global_result,
+                local_result,
+                current,
+                goal,
+                len(traversability_guide.traversable_keys),
+                int(height.size),
+                int(local_layer.height.size),
+                failed=False,
+            )
         )
         if math.dist(current, goal) <= step_distance:
             trajectory.append((goal[0], goal[1], yaw))
@@ -147,7 +177,17 @@ def yaw_from_path(path: list[tuple[float, float, float]], point: tuple[float, fl
     return math.atan2(b[1] - a[1], b[0] - a[0])
 
 
-def cycle_row(cycle, global_result, local_result, current, goal, shared_traversable_voxels: int, failed: bool) -> dict:
+def cycle_row(
+    cycle,
+    global_result,
+    local_result,
+    current,
+    goal,
+    shared_traversable_voxels: int,
+    global_cells: int,
+    local_cells: int,
+    failed: bool,
+) -> dict:
     return {
         "cycle": cycle,
         "success": int(not failed and global_result.success and local_result.success),
@@ -170,6 +210,8 @@ def cycle_row(cycle, global_result, local_result, current, goal, shared_traversa
         "global_normal_initializations": local_result.global_normal_initializations,
         "local_traversable_voxels": local_result.local_traversable_voxels,
         "local_traversable_queries": local_result.local_traversable_queries,
+        "global_cells": global_cells,
+        "local_cells": local_cells,
         "distance_to_goal_m": math.dist(current, goal),
     }
 
@@ -198,6 +240,8 @@ def write_outputs(output_dir: Path, result: dict) -> None:
             "global_normal_initializations",
             "local_traversable_voxels",
             "local_traversable_queries",
+            "global_cells",
+            "local_cells",
             "distance_to_goal_m",
         ]
         writer = csv.DictWriter(file, fieldnames=fieldnames)

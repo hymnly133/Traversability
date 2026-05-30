@@ -13,7 +13,7 @@ from traversability.hybrid_local_planner import HybridLocalPlannerConfig, NDTLoc
 from traversability.implicit_map import ImplicitTerrainMap
 from traversability.ndt_map import NDTConfig, NDTImplicitMap
 from traversability.ndt_planner import plan_ndt_global
-from traversability.terrain import analyze_layer
+from traversability.terrain import crop_local_window
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,7 +50,16 @@ def run_pipeline() -> dict:
     goal = (1.55, 0.72, 0.0)
     global_result = plan_ndt_global(ndt_map, start, goal)
     global_xy = [(x, y) for x, y, _ in global_result.path_xyz]
-    terrain_map = ImplicitTerrainMap(analyze_layer("paper_pipeline", height, obstacle, resolution, origin))
+    local_layer = crop_local_window(
+        "paper_pipeline_local",
+        height,
+        obstacle,
+        resolution,
+        origin,
+        center_xy=(global_xy[0][0], global_xy[0][1]),
+        radius=3.0,
+    )
+    terrain_map = ImplicitTerrainMap(local_layer)
     traversability_guide = NDTLocalTraversabilityGuide.from_ndt_map(ndt_map)
     local_result = plan_hybrid_local(
         terrain_map,
@@ -76,6 +85,8 @@ def run_pipeline() -> dict:
         "local": local_result,
         "global_xy": global_xy,
         "shared_traversable_voxels": len(traversability_guide.traversable_keys),
+        "global_cells": int(height.size),
+        "local_cells": int(local_layer.height.size),
     }
 
 
@@ -143,6 +154,8 @@ def write_outputs(output_dir: Path, result: dict) -> None:
                 "global_normal_initializations",
                 "local_traversable_voxels",
                 "local_traversable_queries",
+                "global_cells",
+                "local_cells",
             ]
         )
         writer.writerow(
@@ -169,6 +182,8 @@ def write_outputs(output_dir: Path, result: dict) -> None:
                 local_result.global_normal_initializations,
                 local_result.local_traversable_voxels,
                 local_result.local_traversable_queries,
+                result["global_cells"],
+                result["local_cells"],
             ]
         )
 
@@ -223,6 +238,7 @@ def print_summary(output_dir: Path, result: dict) -> None:
     table.add_row("local min stability", f"{result['local'].min_stability:.3f}")
     table.add_row("shared traversable voxels", str(result["shared_traversable_voxels"]))
     table.add_row("local traversable voxels", str(result["local"].local_traversable_voxels))
+    table.add_row("local map cells", str(result["local_cells"]))
     table.add_row("global normal initializations", str(result["local"].global_normal_initializations))
     Console().print(table)
     Console().print(f"[green]Wrote paper pipeline outputs to[/green] {output_dir.resolve()}")

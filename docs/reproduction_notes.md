@@ -37,6 +37,7 @@ This repository therefore implements an independent prototype that reproduces th
 - robot footprint configuration-stability estimation from sampled local support geometry
 - tracked-robot geometric configuration-stability prototype with main-track/flipper checkpoints, support polygon, CoM/ZMP check, flipper support, and body collision
 - wheeled-robot geometric configuration-stability prototype with cylindrical wheel contact compensation, support polygon, CoM/ZMP check, and body collision
+- robot-centric local terrain map extraction as a sliding high-resolution window for paper pipeline and receding-horizon local planning
 - Hybrid A* local-planning prototype with continuous SE(2) node expansion, motion primitives, local-window bounds, global-path heuristic guidance, traversability checks, and tracked-stability node filtering
 - robot-centric local traversable voxel set derived from global NDT traversability, with nearest-neighbor lookup for local planning and smoothing
 - Hybrid local-path smoothing with shortcutting and lateral refinement constrained by terrain risk, global NDT traversability, and tracked-stability checks
@@ -79,6 +80,7 @@ Expected verification gates:
 - paper-pipeline and paper-receding checks verify local Hybrid path smoothing reduces waypoint count or curvature without violating risk and stability gates
 - paper-pipeline and paper-receding checks verify that NDT global traversability is shared with local Hybrid A* planning
 - paper-pipeline and paper-receding checks verify that the local traversable set is windowed from global traversability and queried during local planning
+- paper-pipeline and paper-receding checks verify that the local terrain map is cropped to a robot-centric sliding window
 - paper-pipeline and paper-receding checks verify that NDT global normals initialize local tracked-stability estimation
 - paper-scenario checks pass for stairs/rubble/grass/hill/bridge NDT global planning success, cost bounds, path length, and visualization artifacts
 - `verify_paper_mainline` runs only the paper-mainline checks and intentionally excludes historical ablation, tracking, and extra benchmark demos
