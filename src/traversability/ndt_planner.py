@@ -29,6 +29,7 @@ class NDTPlanningResult:
     connected_components: int
     traversable_voxels: int
     success: bool
+    reused_connected_set: bool = False
 
 
 class UnionFind:
@@ -74,7 +75,7 @@ def plan_ndt_global(
     if not traversable:
         return empty_result(begin)
 
-    connected = build_connected_traversable_set(traversable, config.neighbor_mode)
+    connected, reused_connected_set = get_connected_traversable_set(ndt_map, traversable, config.neighbor_mode)
     start_key = nearest_traversable_key(ndt_map, traversable, np.asarray(start_xyz, dtype=np.float64))
     goal_key = nearest_traversable_key(ndt_map, traversable, np.asarray(goal_xyz, dtype=np.float64))
     if start_key is None or goal_key is None:
@@ -105,7 +106,23 @@ def plan_ndt_global(
         connected_components=connected.component_count(),
         traversable_voxels=len(traversable),
         success=True,
+        reused_connected_set=reused_connected_set,
     )
+
+
+def get_connected_traversable_set(
+    ndt_map: NDTImplicitMap,
+    traversable: set[tuple[int, int, int]],
+    neighbor_mode: int,
+) -> tuple[UnionFind, bool]:
+    frozen_traversable = frozenset(traversable)
+    cache_key = (neighbor_mode, frozen_traversable)
+    cached = ndt_map.connected_cache.get(cache_key)
+    if cached is not None:
+        return cached, True
+    connected = build_connected_traversable_set(traversable, neighbor_mode)
+    ndt_map.connected_cache = {cache_key: connected}
+    return connected, False
 
 
 def build_connected_traversable_set(traversable: set[tuple[int, int, int]], neighbor_mode: int = 26) -> UnionFind:

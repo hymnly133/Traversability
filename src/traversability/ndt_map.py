@@ -61,6 +61,8 @@ class NDTImplicitMap:
 
     def __init__(self, points: np.ndarray | None = None, config: NDTConfig | None = None, origin: np.ndarray | None = None):
         self.config = config or NDTConfig()
+        self.metrics: dict[tuple[int, int, int], NDTMetric] = {}
+        self.connected_cache: dict[tuple[int, frozenset[tuple[int, int, int]]], object] = {}
         if points is None:
             if origin is None:
                 raise ValueError("origin is required when constructing an empty NDT map")
@@ -75,7 +77,6 @@ class NDTImplicitMap:
             self.cells = {}
             self.integrate_points(self.points)
         self.occupied = self.occupied_keys()
-        self.metrics: dict[tuple[int, int, int], NDTMetric] = {}
 
     @classmethod
     def empty(cls, origin: tuple[float, float, float] | np.ndarray, config: NDTConfig | None = None) -> "NDTImplicitMap":
@@ -89,6 +90,7 @@ class NDTImplicitMap:
         self.points = np.vstack([self.points, new_points]) if len(self.points) else new_points.copy()
         self.occupied = self.occupied_keys()
         self.metrics = {}
+        self.connected_cache = {}
 
     def occupied_keys(self) -> set[tuple[int, int, int]]:
         return {key for key, cell in self.cells.items() if cell.count >= self.config.saturation_count}

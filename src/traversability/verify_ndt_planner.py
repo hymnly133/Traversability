@@ -30,6 +30,7 @@ def main() -> None:
 
     result = plan_ndt_global(ndt_map, start_xyz=(-2.05, -0.9, 0.0), goal_xyz=(2.05, 0.9, 0.0))
     require(result.success, "NDT global planner failed")
+    require(not result.reused_connected_set, "first planning call should build the connected set")
     require(result.expanded_nodes > 5, "planner expanded too few nodes to exercise A*")
     require(result.path_length_m > 3.5, "path length is unexpectedly short")
     require(result.path_length_m < 7.0, "path length is unexpectedly long")
@@ -40,6 +41,17 @@ def main() -> None:
     require(np.min(path[:, 0]) < -1.6 and np.max(path[:, 0]) > 1.6, "path does not span start to goal")
     require(np.max(np.abs(path[:, 1])) > 0.35, "path did not use the low-risk corridor around the barrier")
     require(not path_crosses_barrier(metrics, result.path_keys), "path crossed the high-risk barrier")
+    cached_result = plan_ndt_global(ndt_map, start_xyz=(-2.05, -0.9, 0.0), goal_xyz=(2.05, 0.9, 0.0))
+    require(cached_result.success, "cached NDT global planner failed")
+    require(cached_result.reused_connected_set, "second planning call did not reuse the connected traversable set")
+
+    original_cache_size = len(ndt_map.connected_cache)
+    ndt_map.integrate_points(make_update_patch())
+    require(len(ndt_map.connected_cache) == 0, "incremental map update did not invalidate connected-set cache")
+    updated_result = plan_ndt_global(ndt_map, start_xyz=(-2.05, -0.9, 0.0), goal_xyz=(2.05, 0.9, 0.0))
+    require(updated_result.success, "planner failed after incremental map update")
+    require(not updated_result.reused_connected_set, "planner reused stale connected set after map update")
+    require(original_cache_size > 0 and len(ndt_map.connected_cache) > 0, "connected-set cache was not rebuilt after update")
 
     print("NDT global planner verification passed")
 
@@ -56,6 +68,17 @@ def make_corridor_cloud() -> np.ndarray:
                 z += 0.95
             samples = 3
             jitter = rng.normal(0.0, 0.018, size=(samples, 3))
+            points.append(np.array([x, y, z], dtype=np.float64) + jitter)
+    return np.vstack(points)
+
+
+def make_update_patch() -> np.ndarray:
+    rng = np.random.default_rng(37)
+    points = []
+    for x in np.arange(-2.3, -1.7, 0.08):
+        for y in np.arange(0.75, 1.10, 0.08):
+            z = 0.04 * math.sin(2.0 * x) + 0.025 * rng.normal()
+            jitter = rng.normal(0.0, 0.018, size=(3, 3))
             points.append(np.array([x, y, z], dtype=np.float64) + jitter)
     return np.vstack(points)
 

@@ -29,7 +29,7 @@ This repository therefore implements an independent prototype that reproduces th
 - paper-style SVD terrain metrics for roughness and slope, plus visible-neighborhood sparsity
 - checkpoint/ray-casting traversal-risk assessment split into terrain, collision, and falling risks
 - 3-D voxel A* global planning over the NDT traversability map using the paper's length-plus-traversal-cost structure
-- union-find connected traversable voxel set to restrict global search to connected traversable voxels
+- map-level cached union-find connected traversable voxel set to restrict global search to connected traversable voxels, invalidated after incremental map updates
 - terrain pyramid with multiple map resolutions
 - terrain-aware risk from slope, roughness, step height, and obstacle proximity
 - coarse-to-fine A* planning through the pyramid
@@ -67,6 +67,7 @@ Expected verification gates:
 - implicit map grid-point and continuous-query checks pass
 - NDT implicit voxel-map checks pass for incremental integration, SVD roughness/slope, sparsity, and terrain/collision/falling traversal-risk detection
 - NDT global-planner checks pass for connected traversable voxel set construction and 3-D A* avoidance of risky voxels
+- NDT global-planner checks verify connected traversable voxel-set reuse across repeated plans and invalidation after incremental map updates
 - tracked-stability checks pass for flat main-track support, flipper-assisted ledge support, and body-collision rejection
 - wheeled-stability checks pass for flat four-wheel support, side-step roll support, body-collision rejection, and trench infeasibility
 - Hybrid-local-planner checks pass for global-path-guided obstacle avoidance under traversability and tracked-stability constraints
@@ -108,7 +109,7 @@ Additional gates:
 The current prototype is not yet a full field-system reproduction. Missing parts include:
 
 - real sensor logs or field datasets
-- octree-backed storage and incremental connected-set updates
+- octree-backed storage
 - replacing the legacy elevation-grid planner path with the NDT voxel planner in the main demo pipeline
 - richer large-scale experiment scenes matching the paper's stairs, rubble, grass, hill, bridge, and field layouts
 - kinodynamic constraints and controller-level actuator limits
