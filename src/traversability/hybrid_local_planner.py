@@ -29,6 +29,8 @@ class HybridLocalPlannerConfig:
     min_stability: float = 0.30
     global_waypoint_limit: int = 24
     global_traversability_radius_cells: int = 1
+    smoothing_iterations: int = 2
+    smoothing_offsets: tuple[float, ...] = (-0.12, 0.0, 0.12)
 
 
 @dataclass(frozen=True)
@@ -89,11 +91,18 @@ class HybridState:
 @dataclass(frozen=True)
 class HybridLocalPlanningResult:
     path: list[tuple[float, float, float]]
+    raw_path: list[tuple[float, float, float]]
     runtime_ms: float
     expanded_nodes: int
     path_length_m: float
+    raw_path_length_m: float
+    path_states: int
+    raw_path_states: int
+    waypoint_states: int
     mean_risk: float
     min_stability: float
+    curvature_cost: float
+    raw_curvature_cost: float
     success: bool
     global_traversability_checks: int = 0
     global_normal_initializations: int = 0
@@ -145,6 +154,7 @@ def plan_hybrid_local(
                 global_normal_initializations,
                 global_traversability,
                 config.global_traversability_radius_cells,
+                config,
             )
 
         for steer in (-config.max_steer, 0.0, config.max_steer):
@@ -202,6 +212,7 @@ def plan_hybrid_local(
             global_normal_initializations,
             global_traversability,
             config.global_traversability_radius_cells,
+            config,
         )
     return empty_result(begin, expanded)
 
@@ -285,47 +296,301 @@ def build_result(
     global_normal_initializations: int = 0,
     global_traversability: NDTLocalTraversabilityGuide | None = None,
     global_traversability_radius_cells: int = 1,
+    config: HybridLocalPlannerConfig | None = None,
 ) -> HybridLocalPlanningResult:
+    config = config or HybridLocalPlannerConfig()
     state_path = reconstruct_path(states, came_from, goal_key)
-    path = [(state.x, state.y, state.yaw) for state in state_path]
+    raw_path = [(state.x, state.y, state.yaw) for state in state_path]
+    waypoint_path = smooth_hybrid_path(terrain_map, raw_path, config, global_traversability, global_traversability_radius_cells)
+    path = densify_hybrid_path(waypoint_path, config.step_length)
     risks = []
     stabilities = []
-    for state in state_path:
-        query = terrain_map.query((state.x, state.y))
+    for x, y, yaw in path:
+        query = terrain_map.query((x, y))
         initial_normal = (
-            global_traversability.normal_at((state.x, state.y), query.height, global_traversability_radius_cells)
+            global_traversability.normal_at((x, y), query.height, global_traversability_radius_cells)
             if global_traversability is not None
             else None
         )
         stability = estimate_tracked_configuration_stability(
             terrain_map,
-            (state.x, state.y),
-            state.yaw,
+            (x, y),
+            yaw,
             initial_normal=initial_normal,
         )
         risks.append(query.risk)
         stabilities.append(stability.stability)
     return HybridLocalPlanningResult(
         path=path,
+        raw_path=raw_path,
         runtime_ms=(time.perf_counter() - begin) * 1000.0,
         expanded_nodes=expanded,
         path_length_m=polyline_length([(x, y) for x, y, _ in path]),
+        raw_path_length_m=polyline_length([(x, y) for x, y, _ in raw_path]),
+        path_states=len(path),
+        raw_path_states=len(raw_path),
+        waypoint_states=len(waypoint_path),
         mean_risk=float(np.mean(risks)),
         min_stability=float(np.min(stabilities)),
+        curvature_cost=path_curvature_cost(path),
+        raw_curvature_cost=path_curvature_cost(raw_path),
         success=len(path) >= 2,
         global_traversability_checks=global_traversability_checks,
         global_normal_initializations=global_normal_initializations,
     )
 
 
+def smooth_hybrid_path(
+    terrain_map: ImplicitTerrainMap,
+    path: list[tuple[float, float, float]],
+    config: HybridLocalPlannerConfig,
+    global_traversability: NDTLocalTraversabilityGuide | None,
+    global_traversability_radius_cells: int,
+) -> list[tuple[float, float, float]]:
+    if len(path) <= 2 or config.smoothing_iterations <= 0:
+        return path
+    smoothed = shortcut_hybrid_path(terrain_map, path, config, global_traversability, global_traversability_radius_cells)
+    for _ in range(config.smoothing_iterations):
+        changed = False
+        for index in range(1, len(smoothed) - 1):
+            previous = smoothed[index - 1]
+            current = smoothed[index]
+            next_state = smoothed[index + 1]
+            best = current
+            best_cost = smoothing_local_cost(terrain_map, previous, current, next_state)
+            for candidate_xy in lateral_candidates(previous[:2], current[:2], next_state[:2], config.smoothing_offsets):
+                candidate_yaw = math.atan2(next_state[1] - previous[1], next_state[0] - previous[0])
+                candidate = (candidate_xy[0], candidate_xy[1], candidate_yaw)
+                if not candidate_is_safe(
+                    terrain_map,
+                    candidate,
+                    previous,
+                    next_state,
+                    config,
+                    global_traversability,
+                    global_traversability_radius_cells,
+                ):
+                    continue
+                candidate_cost = smoothing_local_cost(terrain_map, previous, candidate, next_state)
+                if candidate_cost < best_cost:
+                    best = candidate
+                    best_cost = candidate_cost
+            if best != current:
+                smoothed[index] = best
+                changed = True
+        if not changed:
+            break
+    return refresh_path_yaws(smoothed)
+
+
+def shortcut_hybrid_path(
+    terrain_map: ImplicitTerrainMap,
+    path: list[tuple[float, float, float]],
+    config: HybridLocalPlannerConfig,
+    global_traversability: NDTLocalTraversabilityGuide | None,
+    global_traversability_radius_cells: int,
+) -> list[tuple[float, float, float]]:
+    if len(path) <= 2:
+        return path
+    result = [path[0]]
+    anchor = 0
+    max_lookahead = 8
+    while anchor < len(path) - 1:
+        next_index = min(len(path) - 1, anchor + max_lookahead)
+        while next_index > anchor + 1:
+            if dense_segment_is_safe(
+                terrain_map,
+                path[anchor],
+                path[next_index],
+                config,
+                global_traversability,
+                global_traversability_radius_cells,
+            ):
+                break
+            next_index -= 1
+        result.append(path[next_index])
+        anchor = next_index
+    return refresh_path_yaws(result)
+
+
+def candidate_is_safe(
+    terrain_map: ImplicitTerrainMap,
+    candidate: tuple[float, float, float],
+    previous: tuple[float, float, float],
+    next_state: tuple[float, float, float],
+    config: HybridLocalPlannerConfig,
+    global_traversability: NDTLocalTraversabilityGuide | None,
+    global_traversability_radius_cells: int,
+) -> bool:
+    query = terrain_map.query(candidate[:2])
+    if query.obstacle or query.risk > config.max_risk:
+        return False
+    initial_normal = None
+    if global_traversability is not None:
+        key = global_traversability.nearest_traversable_key(candidate[:2], query.height, global_traversability_radius_cells)
+        if key is None:
+            return False
+        initial_normal = global_traversability.normals.get(key)
+    stability = estimate_tracked_configuration_stability(
+        terrain_map,
+        candidate[:2],
+        candidate[2],
+        initial_normal=initial_normal,
+    )
+    return (
+        stability.feasible
+        and stability.stability >= config.min_stability
+        and segment_is_safe(terrain_map, previous, candidate, config, global_traversability, global_traversability_radius_cells)
+        and segment_is_safe(terrain_map, candidate, next_state, config, global_traversability, global_traversability_radius_cells)
+    )
+
+
+def segment_is_safe(
+    terrain_map: ImplicitTerrainMap,
+    start: tuple[float, float, float],
+    end: tuple[float, float, float],
+    config: HybridLocalPlannerConfig,
+    global_traversability: NDTLocalTraversabilityGuide | None,
+    global_traversability_radius_cells: int,
+) -> bool:
+    distance = math.dist(start[:2], end[:2])
+    steps = max(2, int(distance / max(terrain_map.resolution, 1e-6)))
+    yaw = math.atan2(end[1] - start[1], end[0] - start[0])
+    for index in range(steps + 1):
+        if index not in (0, steps, steps // 2):
+            continue
+        t = index / steps
+        xy = (start[0] + (end[0] - start[0]) * t, start[1] + (end[1] - start[1]) * t)
+        query = terrain_map.query(xy)
+        if query.obstacle or query.risk > config.max_risk:
+            return False
+        initial_normal = None
+        if global_traversability is not None:
+            key = global_traversability.nearest_traversable_key(xy, query.height, global_traversability_radius_cells)
+            if key is None:
+                return False
+            initial_normal = global_traversability.normals.get(key)
+        stability = estimate_tracked_configuration_stability(terrain_map, xy, yaw, initial_normal=initial_normal)
+        if not stability.feasible or stability.stability < config.min_stability:
+            return False
+    return True
+
+
+def dense_segment_is_safe(
+    terrain_map: ImplicitTerrainMap,
+    start: tuple[float, float, float],
+    end: tuple[float, float, float],
+    config: HybridLocalPlannerConfig,
+    global_traversability: NDTLocalTraversabilityGuide | None,
+    global_traversability_radius_cells: int,
+) -> bool:
+    distance = math.dist(start[:2], end[:2])
+    steps = max(2, int(distance / max(terrain_map.resolution * 0.75, 1e-6)))
+    yaw = math.atan2(end[1] - start[1], end[0] - start[0])
+    for index in range(steps + 1):
+        t = index / steps
+        xy = (start[0] + (end[0] - start[0]) * t, start[1] + (end[1] - start[1]) * t)
+        query = terrain_map.query(xy)
+        if query.obstacle or query.risk > config.max_risk:
+            return False
+        initial_normal = None
+        if global_traversability is not None:
+            key = global_traversability.nearest_traversable_key(xy, query.height, global_traversability_radius_cells)
+            if key is None:
+                return False
+            initial_normal = global_traversability.normals.get(key)
+        stability = estimate_tracked_configuration_stability(terrain_map, xy, yaw, initial_normal=initial_normal)
+        if not stability.feasible or stability.stability < config.min_stability:
+            return False
+    return True
+
+
+def smoothing_local_cost(
+    terrain_map: ImplicitTerrainMap,
+    previous: tuple[float, float, float],
+    current: tuple[float, float, float],
+    next_state: tuple[float, float, float],
+) -> float:
+    query = terrain_map.query(current[:2])
+    length = math.dist(previous[:2], current[:2]) + math.dist(current[:2], next_state[:2])
+    return length + 0.35 * heading_change(previous, current, next_state) + min(query.risk, 1.0)
+
+
+def lateral_candidates(
+    previous: tuple[float, float],
+    current: tuple[float, float],
+    next_point: tuple[float, float],
+    offsets: tuple[float, ...],
+) -> list[tuple[float, float]]:
+    tangent = np.array([next_point[0] - previous[0], next_point[1] - previous[1]], dtype=np.float64)
+    norm = float(np.linalg.norm(tangent))
+    if norm <= 1e-9:
+        return [current]
+    normal = np.array([-tangent[1], tangent[0]], dtype=np.float64) / norm
+    base = np.array(current, dtype=np.float64)
+    return [tuple((base + offset * normal).tolist()) for offset in offsets]
+
+
+def refresh_path_yaws(path: list[tuple[float, float, float]]) -> list[tuple[float, float, float]]:
+    refreshed = []
+    for index, state in enumerate(path):
+        if index < len(path) - 1:
+            neighbor = path[index + 1]
+            yaw = math.atan2(neighbor[1] - state[1], neighbor[0] - state[0])
+        elif refreshed:
+            yaw = refreshed[-1][2]
+        else:
+            yaw = state[2]
+        refreshed.append((state[0], state[1], normalize_angle(yaw)))
+    return refreshed
+
+
+def densify_hybrid_path(path: list[tuple[float, float, float]], spacing: float) -> list[tuple[float, float, float]]:
+    if len(path) <= 1:
+        return path
+    dense = [path[0]]
+    target_spacing = max(spacing, 1e-6)
+    for start, end in zip(path[:-1], path[1:]):
+        distance = math.dist(start[:2], end[:2])
+        steps = max(1, int(math.ceil(distance / target_spacing)))
+        yaw = math.atan2(end[1] - start[1], end[0] - start[0])
+        for step in range(1, steps + 1):
+            t = step / steps
+            dense.append((start[0] + (end[0] - start[0]) * t, start[1] + (end[1] - start[1]) * t, normalize_angle(yaw)))
+    return refresh_path_yaws(dense)
+
+
+def path_curvature_cost(path: list[tuple[float, float, float]]) -> float:
+    if len(path) < 3:
+        return 0.0
+    return float(sum(heading_change(a, b, c) for a, b, c in zip(path[:-2], path[1:-1], path[2:])))
+
+
+def heading_change(
+    previous: tuple[float, float, float],
+    current: tuple[float, float, float],
+    next_state: tuple[float, float, float],
+) -> float:
+    heading_a = math.atan2(current[1] - previous[1], current[0] - previous[0])
+    heading_b = math.atan2(next_state[1] - current[1], next_state[0] - current[0])
+    return abs(normalize_angle(heading_b - heading_a))
+
+
 def empty_result(begin: float, expanded: int = 0) -> HybridLocalPlanningResult:
     return HybridLocalPlanningResult(
         path=[],
+        raw_path=[],
         runtime_ms=(time.perf_counter() - begin) * 1000.0,
         expanded_nodes=expanded,
         path_length_m=0.0,
+        raw_path_length_m=0.0,
+        path_states=0,
+        raw_path_states=0,
+        waypoint_states=0,
         mean_risk=float("inf"),
         min_stability=0.0,
+        curvature_cost=float("inf"),
+        raw_curvature_cost=float("inf"),
         success=False,
     )
 

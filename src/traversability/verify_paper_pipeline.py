@@ -31,6 +31,15 @@ def main() -> None:
     require(summary["local_success"] == "1", "Hybrid local planner failed")
     require(float(summary["global_path_length_m"]) >= 3.0, "global path is unexpectedly short")
     require(float(summary["local_path_length_m"]) >= 1.4, "local path is unexpectedly short")
+    require(float(summary["local_path_length_m"]) <= float(summary["local_raw_path_length_m"]) + 0.25, "local smoothing made the path much longer")
+    require(float(summary["local_curvature_cost"]) <= float(summary["local_raw_curvature_cost"]) + 1e-6, "local smoothing did not reduce curvature")
+    require(int(summary["local_path_states"]) >= 6, "smoothed local path has too few executable states")
+    require(int(summary["local_waypoint_states"]) <= int(summary["local_raw_path_states"]), "local smoothing increased waypoint states")
+    require(
+        int(summary["local_waypoint_states"]) < int(summary["local_raw_path_states"])
+        or float(summary["local_curvature_cost"]) < float(summary["local_raw_curvature_cost"]),
+        "local smoothing did not simplify the Hybrid path",
+    )
     require(float(summary["global_max_traversal_cost"]) < 0.82, "global path crossed untraversable cost")
     require(float(summary["local_mean_risk"]) < 0.65, "local path risk too high")
     require(float(summary["local_min_stability"]) >= 0.28, "local path stability too low")

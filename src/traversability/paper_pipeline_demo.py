@@ -129,6 +129,12 @@ def write_outputs(output_dir: Path, result: dict) -> None:
                 "local_expanded",
                 "global_path_length_m",
                 "local_path_length_m",
+                "local_raw_path_length_m",
+                "local_path_states",
+                "local_raw_path_states",
+                "local_waypoint_states",
+                "local_curvature_cost",
+                "local_raw_curvature_cost",
                 "global_max_traversal_cost",
                 "local_mean_risk",
                 "local_min_stability",
@@ -147,6 +153,12 @@ def write_outputs(output_dir: Path, result: dict) -> None:
                 local_result.expanded_nodes,
                 f"{global_result.path_length_m:.3f}",
                 f"{local_result.path_length_m:.3f}",
+                f"{local_result.raw_path_length_m:.3f}",
+                local_result.path_states,
+                local_result.raw_path_states,
+                local_result.waypoint_states,
+                f"{local_result.curvature_cost:.4f}",
+                f"{local_result.raw_curvature_cost:.4f}",
                 f"{global_result.max_traversal_cost:.4f}",
                 f"{local_result.mean_risk:.4f}",
                 f"{local_result.min_stability:.4f}",
@@ -203,6 +215,7 @@ def print_summary(output_dir: Path, result: dict) -> None:
     table.add_row("local runtime", f"{result['local'].runtime_ms:.1f} ms")
     table.add_row("global path length", f"{result['global'].path_length_m:.2f} m")
     table.add_row("local path length", f"{result['local'].path_length_m:.2f} m")
+    table.add_row("local curvature", f"{result['local'].curvature_cost:.3f}")
     table.add_row("local min stability", f"{result['local'].min_stability:.3f}")
     table.add_row("shared traversable voxels", str(result["shared_traversable_voxels"]))
     table.add_row("global normal initializations", str(result["local"].global_normal_initializations))
