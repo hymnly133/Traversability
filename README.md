@@ -137,7 +137,19 @@ uv pip install -e .
 .venv\Scripts\python.exe -m traversability.verify_paper_receding
 ```
 
-运行完整验证，包括滚动重规划、ablation、路径跟踪、点云输入和多场景 benchmark：
+运行论文主线验证，只覆盖论文主线链路和典型地形场景，不运行对比方法或边缘实验：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.verify_paper_mainline
+```
+
+运行论文典型地形场景 suite：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.paper_scenario_suite
+```
+
+运行历史完整验证，包括旧版滚动重规划、ablation、路径跟踪、点云输入和多场景 benchmark：
 
 ```powershell
 .venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime --check-ablation --check-tracking --check-pointcloud --check-benchmark
@@ -258,6 +270,7 @@ src/traversability/ndt_planner.py        # 论文式 3D voxel A* 与连通可通
 src/traversability/hybrid_local_planner.py # 论文式 Hybrid A* local planner
 src/traversability/paper_pipeline_demo.py # NDT global + Hybrid local 集成链路
 src/traversability/paper_receding_demo.py # NDT global + Hybrid local 多周期重规划
+src/traversability/paper_scenario_suite.py # 论文典型地形场景 suite
 src/traversability/implicit_map.py       # 连续地形查询/隐式地图 facade
 src/traversability/planner.py            # 多层 terrain-aware A*
 src/traversability/trajectory_optimizer.py # 局部轨迹优化
@@ -282,6 +295,8 @@ src/traversability/verify_wheeled_stability.py # wheeled robot 稳定性验证
 src/traversability/verify_hybrid_local_planner.py # Hybrid A* local planner 验证
 src/traversability/verify_paper_pipeline.py # NDT global + Hybrid local 集成验证
 src/traversability/verify_paper_receding.py # NDT global + Hybrid local 多周期重规划验证
+src/traversability/verify_paper_scenarios.py # 论文典型地形场景验证
+src/traversability/verify_paper_mainline.py # 论文主线验证入口
 runs/                                  # 运行后生成的结果
 ```
 

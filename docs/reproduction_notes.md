@@ -38,6 +38,7 @@ This repository therefore implements an independent prototype that reproduces th
 - Hybrid A* local-planning prototype with continuous SE(2) node expansion, motion primitives, local-window bounds, global-path heuristic guidance, traversability checks, and tracked-stability node filtering
 - integrated paper-style pipeline that feeds an NDT voxel global path into the Hybrid A* local planner
 - receding-horizon paper-style pipeline that repeatedly rebuilds the NDT map, replans globally, plans locally, advances execution, and handles a mid-run obstacle update
+- paper-style terrain scenario suite covering stairs, rubble, grass, hill, and bridge/trench layouts from the experiment themes
 - local iterative shortcut smoothing constrained by terrain risk and geometric feasibility
 - local trajectory optimization over length, risk, curvature, and configuration stability
 - stability sampling along the final path
@@ -68,6 +69,8 @@ Expected verification gates:
 - Hybrid-local-planner checks pass for global-path-guided obstacle avoidance under traversability and tracked-stability constraints
 - paper-pipeline checks pass for NDT global planning, Hybrid local planning, artifact generation, obstacle avoidance, and local path adherence to the NDT guide
 - paper-receding checks pass for multi-cycle NDT+Hybrid replanning, trajectory progress, post-update global replanning, stability, risk, and artifact generation
+- paper-scenario checks pass for stairs/rubble/grass/hill/bridge NDT global planning success, cost bounds, path length, and visualization artifacts
+- `verify_paper_mainline` runs only the paper-mainline checks and intentionally excludes historical ablation, tracking, and extra benchmark demos
 - point-cloud file round-trip checks pass for CSV, XYZ, NPY, and ASCII PLY
 - planner reports success
 - `max_risk <= 0.90`

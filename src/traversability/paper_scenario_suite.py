@@ -1,0 +1,222 @@
+from __future__ import annotations
+
+import argparse
+import csv
+from dataclasses import dataclass
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+from rich.console import Console
+from rich.table import Table
+
+from traversability.ndt_map import NDTConfig, NDTImplicitMap
+from traversability.ndt_planner import plan_ndt_global
+from traversability.paper_pipeline_demo import sample_points
+
+
+@dataclass(frozen=True)
+class Scenario:
+    name: str
+    height: np.ndarray
+    obstacle: np.ndarray
+    resolution: float
+    origin: tuple[float, float]
+    start: tuple[float, float, float]
+    goal: tuple[float, float, float]
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run paper-style rough-terrain scenario suite.")
+    parser.add_argument("--output", type=Path, default=Path("runs/paper_scenarios"))
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    args.output.mkdir(parents=True, exist_ok=True)
+    rows = [run_scenario(scenario, args.output) for scenario in make_scenarios()]
+    write_summary(args.output, rows)
+    print_summary(args.output, rows)
+
+
+def run_scenario(scenario: Scenario, output_dir: Path) -> dict:
+    points = sample_points(scenario.height, scenario.obstacle, scenario.resolution, scenario.origin)
+    ndt_map = NDTImplicitMap(points, ndt_config(scenario.resolution))
+    result = plan_ndt_global(ndt_map, scenario.start, scenario.goal)
+    plot_scenario(output_dir, scenario, result.path_xyz)
+    return {
+        "scenario": scenario.name,
+        "success": int(result.success),
+        "runtime_ms": result.runtime_ms,
+        "expanded_nodes": result.expanded_nodes,
+        "path_length_m": result.path_length_m,
+        "max_traversal_cost": result.max_traversal_cost,
+        "mean_traversal_cost": result.mean_traversal_cost,
+        "traversable_voxels": result.traversable_voxels,
+        "connected_components": result.connected_components,
+        "path_points": len(result.path_xyz),
+    }
+
+
+def ndt_config(resolution: float) -> NDTConfig:
+    voxel_size = max(0.16, resolution * 3.0)
+    return NDTConfig(
+        voxel_size=voxel_size,
+        fusion_radius=voxel_size * 2.0,
+        saturation_count=2,
+        slope_threshold_rad=np.deg2rad(35.0),
+        complexity_threshold=0.90,
+        robot_radius=0.30,
+        robot_height=0.58,
+    )
+
+
+def make_scenarios() -> list[Scenario]:
+    return [
+        terrain_stairs(),
+        terrain_rubble(),
+        terrain_grass(),
+        terrain_hill(),
+        terrain_bridge(),
+    ]
+
+
+def terrain_base(name: str, size: int = 84, resolution: float = 0.055):
+    origin = (-(size * resolution) / 2.0, -(size * resolution) / 2.0)
+    xs = origin[0] + np.arange(size) * resolution
+    ys = origin[1] + np.arange(size) * resolution
+    xx, yy = np.meshgrid(xs, ys)
+    height = 0.025 * np.sin(1.7 * xx) + 0.02 * np.cos(1.9 * yy)
+    obstacle = np.zeros((size, size), dtype=bool)
+    start = (origin[0] + 0.35, origin[1] + 0.45, 0.0)
+    goal = (origin[0] + size * resolution - 0.45, origin[1] + size * resolution - 0.45, 0.0)
+    return xx, yy, height, obstacle, origin, resolution, start, goal
+
+
+def terrain_stairs() -> Scenario:
+    xx, yy, height, obstacle, origin, resolution, start, goal = terrain_base("stairs")
+    stair_band = (xx > -0.35) & (xx < 0.55) & (yy > -1.25) & (yy < 1.15)
+    height += np.where(stair_band, 0.08 * np.floor((yy + 1.25) / 0.22), 0.0)
+    obstacle |= (np.abs(xx - 0.10) < 0.08) & (yy > -0.95) & (yy < 0.75)
+    height[obstacle] += 0.55
+    return Scenario("stairs", height, obstacle, resolution, origin, start, goal)
+
+
+def terrain_rubble() -> Scenario:
+    xx, yy, height, obstacle, origin, resolution, start, goal = terrain_base("rubble")
+    rng = np.random.default_rng(5)
+    for _ in range(26):
+        cx, cy = rng.uniform(-1.5, 1.5), rng.uniform(-1.2, 1.4)
+        radius = rng.uniform(0.05, 0.16)
+        bump = np.exp(-(((xx - cx) / radius) ** 2 + ((yy - cy) / (radius * 0.75)) ** 2))
+        height += rng.uniform(0.05, 0.22) * bump
+        obstacle |= bump > 0.86
+    return Scenario("rubble", height, obstacle, resolution, origin, start, goal)
+
+
+def terrain_grass() -> Scenario:
+    xx, yy, height, obstacle, origin, resolution, start, goal = terrain_base("grass")
+    texture = 0.055 * np.sin(18.0 * xx + 4.0 * np.sin(yy)) * np.cos(13.0 * yy)
+    tall_patch = ((xx + 0.3) ** 2 / 0.75 + ((yy - 0.25) ** 2) / 0.32) < 1.0
+    height += np.where(tall_patch, texture + 0.04, 0.35 * texture)
+    obstacle |= ((xx - 0.45) ** 2 / 0.035 + ((yy + 0.35) ** 2) / 0.08) < 1.0
+    height[obstacle] += 0.45
+    return Scenario("grass", height, obstacle, resolution, origin, start, goal)
+
+
+def terrain_hill() -> Scenario:
+    xx, yy, height, obstacle, origin, resolution, start, goal = terrain_base("hill")
+    height += 0.42 * np.exp(-(((xx + 0.35) / 0.85) ** 2 + ((yy - 0.25) / 0.95) ** 2))
+    height -= 0.26 * np.exp(-(((xx - 0.75) / 0.35) ** 2 + ((yy + 0.45) / 0.45) ** 2))
+    obstacle |= ((xx + 0.15) ** 2 / 0.04 + ((yy + 0.75) ** 2) / 0.20) < 1.0
+    height[obstacle] += 0.55
+    return Scenario("hill", height, obstacle, resolution, origin, start, goal)
+
+
+def terrain_bridge() -> Scenario:
+    xx, yy, height, obstacle, origin, resolution, start, goal = terrain_base("bridge")
+    trench = (np.abs(yy) < 0.34) & (xx > -1.6) & (xx < 1.6)
+    bridge = (np.abs(yy) < 0.16) & (xx > -0.55) & (xx < 0.55)
+    height -= np.where(trench & ~bridge, 0.38, 0.0)
+    obstacle |= ((xx - 0.2) ** 2 / 0.035 + ((yy - 0.72) ** 2) / 0.06) < 1.0
+    height[obstacle] += 0.62
+    return Scenario("bridge", height, obstacle, resolution, origin, start, goal)
+
+
+def write_summary(output_dir: Path, rows: list[dict]) -> None:
+    with (output_dir / "paper_scenarios.csv").open("w", newline="", encoding="utf-8") as file:
+        fieldnames = list(rows[0].keys())
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: format_value(value) for key, value in row.items()})
+    aggregate = aggregate_rows(rows)
+    with (output_dir / "paper_scenarios_summary.csv").open("w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(["metric", "value"])
+        for key, value in aggregate.items():
+            writer.writerow([key, format_value(value)])
+
+
+def aggregate_rows(rows: list[dict]) -> dict:
+    return {
+        "scenarios": len(rows),
+        "success_rate": float(np.mean([row["success"] for row in rows])),
+        "mean_runtime_ms": float(np.mean([row["runtime_ms"] for row in rows])),
+        "mean_expanded_nodes": float(np.mean([row["expanded_nodes"] for row in rows])),
+        "mean_path_length_m": float(np.mean([row["path_length_m"] for row in rows])),
+        "max_traversal_cost": float(max(row["max_traversal_cost"] for row in rows)),
+        "mean_traversable_voxels": float(np.mean([row["traversable_voxels"] for row in rows])),
+    }
+
+
+def format_value(value):
+    return f"{value:.4f}" if isinstance(value, float) else value
+
+
+def plot_scenario(output_dir: Path, scenario: Scenario, path_xyz: list[tuple[float, float, float]]) -> None:
+    extent = [
+        scenario.origin[0],
+        scenario.origin[0] + scenario.resolution * scenario.height.shape[1],
+        scenario.origin[1],
+        scenario.origin[1] + scenario.resolution * scenario.height.shape[0],
+    ]
+    fig, ax = plt.subplots(figsize=(6, 5), constrained_layout=True)
+    ax.imshow(scenario.height, cmap="terrain", origin="lower", extent=extent)
+    ax.contour(scenario.obstacle.astype(float), levels=[0.5], colors="black", origin="lower", extent=extent)
+    if path_xyz:
+        xs = [point[0] for point in path_xyz]
+        ys = [point[1] for point in path_xyz]
+        ax.plot(xs, ys, color="#ffffff", linewidth=2.0, label="NDT global")
+    ax.scatter([scenario.start[0]], [scenario.start[1]], color="#2ca02c", s=45, label="start")
+    ax.scatter([scenario.goal[0]], [scenario.goal[1]], color="#d62728", marker="*", s=65, label="goal")
+    ax.set_title(scenario.name)
+    ax.set_xlabel("x [m]")
+    ax.set_ylabel("y [m]")
+    ax.legend(loc="upper left", framealpha=0.86)
+    fig.savefig(output_dir / f"{scenario.name}.png", dpi=160)
+    plt.close(fig)
+
+
+def print_summary(output_dir: Path, rows: list[dict]) -> None:
+    table = Table(title="Paper Terrain Scenario Suite")
+    table.add_column("Scenario")
+    table.add_column("Success", justify="right")
+    table.add_column("Runtime", justify="right")
+    table.add_column("Path", justify="right")
+    table.add_column("Max cost", justify="right")
+    for row in rows:
+        table.add_row(
+            row["scenario"],
+            str(bool(row["success"])),
+            f"{row['runtime_ms']:.1f} ms",
+            f"{row['path_length_m']:.2f} m",
+            f"{row['max_traversal_cost']:.3f}",
+        )
+    Console().print(table)
+    Console().print(f"[green]Wrote paper scenario outputs to[/green] {output_dir.resolve()}")
+
+
+if __name__ == "__main__":
+    main()
