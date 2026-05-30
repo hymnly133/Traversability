@@ -7,7 +7,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from traversability.stability import RobotFootprint, estimate_configuration_stability
+from traversability.implicit_map import ImplicitTerrainMap
+from traversability.stability import RobotFootprint, estimate_configuration_stability_on_map
 from traversability.terrain import TerrainLayer, TerrainPyramid, grid_to_world, world_to_grid
 
 
@@ -96,9 +97,10 @@ def plan_multilevel(
         coarse_layer = layer
 
     fine_layer = pyramid.finest
+    fine_map = ImplicitTerrainMap(fine_layer)
     raw_path = [grid_to_world(fine_layer, cell) for cell in guide_cells]
-    smooth_path = shortcut_path(fine_layer, raw_path, max_risk=0.92)
-    samples = evaluate_stability(fine_layer, smooth_path)
+    smooth_path = shortcut_path(fine_map, raw_path, max_risk=0.92)
+    samples = evaluate_stability(fine_map, smooth_path)
     runtime_ms = (time.perf_counter() - begin) * 1000.0
     risks = np.array([sample.risk for sample in samples], dtype=np.float64)
     stabilities = np.array([sample.stability for sample in samples], dtype=np.float64)
@@ -297,10 +299,9 @@ def build_corridor(
 
 
 def shortcut_path(
-    layer: TerrainLayer,
+    terrain_map: ImplicitTerrainMap,
     path: list[tuple[float, float]],
     max_risk: float,
-    feasibility_grid: np.ndarray | None = None,
 ) -> list[tuple[float, float]]:
     if len(path) <= 2:
         return path
@@ -310,7 +311,7 @@ def shortcut_path(
     while anchor < len(path) - 1:
         next_index = min(len(path) - 1, anchor + max_lookahead)
         while next_index > anchor + 1:
-            if line_is_safe(layer, path[anchor], path[next_index], max_risk, feasibility_grid):
+            if line_is_safe(terrain_map, path[anchor], path[next_index], max_risk):
                 break
             next_index -= 1
         result.append(path[next_index])
@@ -319,41 +320,39 @@ def shortcut_path(
 
 
 def line_is_safe(
-    layer: TerrainLayer,
+    terrain_map: ImplicitTerrainMap,
     start: tuple[float, float],
     goal: tuple[float, float],
     max_risk: float,
-    feasibility_grid: np.ndarray | None = None,
 ) -> bool:
     distance = math.dist(start, goal)
     yaw = math.atan2(goal[1] - start[1], goal[0] - start[0])
-    steps = max(2, int(distance / (layer.resolution * 0.5)))
+    steps = max(2, int(distance / (terrain_map.resolution * 0.5)))
+    geometry_stride = max(3, steps // 4)
     for idx in range(steps + 1):
         t = idx / steps
         xy = (start[0] + (goal[0] - start[0]) * t, start[1] + (goal[1] - start[1]) * t)
-        row, col = world_to_grid(layer, xy)
-        if layer.obstacle[row, col] or layer.risk[row, col] >= max_risk:
+        query = terrain_map.query(xy)
+        if query.obstacle or query.risk >= max_risk:
             return False
-        if feasibility_grid is not None and not feasibility_grid[row, col]:
-            return False
-        if idx % 3 == 0:
-            config = estimate_configuration_stability(layer, xy, yaw)
+        if idx == 0 or idx == steps or idx % geometry_stride == 0:
+            config = estimate_configuration_stability_on_map(terrain_map, xy, yaw)
             if not config.feasible or config.stability < 0.18:
                 return False
     return True
 
 
-def evaluate_stability(layer: TerrainLayer, path: list[tuple[float, float]]) -> list[StabilitySample]:
+def evaluate_stability(terrain_map: ImplicitTerrainMap, path: list[tuple[float, float]]) -> list[StabilitySample]:
     samples: list[StabilitySample] = []
     footprint = RobotFootprint()
-    resampled = resample_polyline_with_yaw(path, spacing=layer.resolution * 1.5)
+    resampled = resample_polyline_with_yaw(path, spacing=terrain_map.resolution * 1.5)
     for xy, yaw in resampled:
-        row, col = world_to_grid(layer, xy)
-        slope = float(layer.slope[row, col])
-        roughness = float(layer.roughness[row, col])
-        step = float(layer.step[row, col])
-        risk = float(layer.risk[row, col])
-        config = estimate_configuration_stability(layer, xy, yaw, footprint)
+        query = terrain_map.query(xy)
+        slope = query.slope
+        roughness = query.roughness
+        step = query.step
+        risk = query.risk
+        config = estimate_configuration_stability_on_map(terrain_map, xy, yaw, footprint)
         terrain_stability = 1.0 - (
             0.44 * min(slope / 1.2, 1.0)
             + 0.28 * min(roughness / 0.35, 1.0)

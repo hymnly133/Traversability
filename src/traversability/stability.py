@@ -5,7 +5,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from traversability.terrain import TerrainLayer, world_to_grid
+from traversability.implicit_map import ImplicitTerrainMap
+from traversability.terrain import TerrainLayer
 
 
 @dataclass(frozen=True)
@@ -38,17 +39,18 @@ def estimate_configuration_stability(
     yaw: float,
     footprint: RobotFootprint | None = None,
 ) -> ConfigurationStability:
+    return estimate_configuration_stability_on_map(ImplicitTerrainMap(layer), xy, yaw, footprint)
+
+
+def estimate_configuration_stability_on_map(
+    terrain_map: ImplicitTerrainMap,
+    xy: tuple[float, float],
+    yaw: float,
+    footprint: RobotFootprint | None = None,
+) -> ConfigurationStability:
     footprint = footprint or RobotFootprint()
     points = footprint_points(xy, yaw, footprint)
-    heights = []
-    collision = False
-    for point in points:
-        row, col = world_to_grid(layer, point)
-        if layer.obstacle[row, col] or not np.isfinite(layer.risk[row, col]):
-            collision = True
-        heights.append(layer.height[row, col])
-
-    heights_array = np.asarray(heights, dtype=np.float64)
+    heights_array, collision = terrain_map.footprint_heights(points)
     local_points = local_footprint_points(footprint)
     plane = fit_plane(local_points, heights_array)
     predicted = plane[0] * local_points[:, 0] + plane[1] * local_points[:, 1] + plane[2]

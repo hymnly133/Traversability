@@ -23,6 +23,7 @@ At the time of this reproduction pass, that repository contains only a README wi
 This repository therefore implements an independent prototype that reproduces the paper's system shape rather than copying unavailable code:
 
 - large rough terrain represented as an elevation grid
+- implicit terrain-map facade for continuous height, slope, roughness, step, risk, and obstacle queries
 - terrain pyramid with multiple map resolutions
 - terrain-aware risk from slope, roughness, step height, and obstacle proximity
 - coarse-to-fine A* planning through the pyramid
@@ -43,6 +44,7 @@ Run:
 
 Expected verification gates:
 
+- implicit map grid-point and continuous-query checks pass
 - planner reports success
 - `max_risk <= 0.90`
 - `min_stability >= 0.08`

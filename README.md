@@ -19,6 +19,7 @@ DOI: 10.1109/TRO.2025.3577015
 我检查了作者公开仓库 `HITSZ-NRSL/terrain-aware-planning`，截至当前只有 README 和 citation，没有可运行源码。因此本项目没有复制官方实现，而是搭建一个工程化复刻原型，覆盖论文题目和关键词对应的核心链路：
 
 - 大尺度崎岖地形高程图
+- 连续坐标 implicit terrain map 查询接口
 - 多层/多分辨率 terrain pyramid
 - 坡度、粗糙度、局部台阶和障碍物 margin 代价
 - 粗到细 A* 路径规划
@@ -65,6 +66,12 @@ uv pip install -e .
 ```
 
 验证项包括：规划成功、最大风险不超过阈值、最低稳定性不低于阈值、路径长度合理、结果文件和图片生成成功。
+
+单独验证 implicit terrain map 查询：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.verify_implicit_map
+```
 
 运行完整验证，包括滚动重规划 benchmark：
 
@@ -124,11 +131,13 @@ score = passable_fraction * (
 assets/traversability_scene.xml          # MuJoCo MJCF 场景
 src/traversability/evaluate.py           # MuJoCo clearance 评估
 src/traversability/terrain.py            # 地形生成、地形分析、多层地图
+src/traversability/implicit_map.py       # 连续地形查询/隐式地图 facade
 src/traversability/planner.py            # 多层 terrain-aware A*
 src/traversability/stability.py          # 机器人 footprint 配置稳定性估计
 src/traversability/multilevel_demo.py    # 论文复刻原型入口
 src/traversability/realtime_demo.py      # 滚动窗口重规划 benchmark
 src/traversability/verify_reproduction.py # 自动验证入口
+src/traversability/verify_implicit_map.py # implicit map 查询验证
 runs/                                  # 运行后生成的结果
 ```
 

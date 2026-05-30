@@ -26,6 +26,13 @@ def main() -> None:
     command = [
         sys.executable,
         "-m",
+        "traversability.verify_implicit_map",
+    ]
+    subprocess.run(command, check=True)
+
+    command = [
+        sys.executable,
+        "-m",
         "traversability.multilevel_demo",
         "--output",
         str(args.output),
