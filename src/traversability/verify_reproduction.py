@@ -21,6 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--check-ablation", action="store_true")
     parser.add_argument("--check-tracking", action="store_true")
     parser.add_argument("--check-pointcloud", action="store_true")
+    parser.add_argument("--check-benchmark", action="store_true")
     return parser.parse_args()
 
 
@@ -124,6 +125,20 @@ def main() -> None:
         )
         verify_pointcloud_outputs(pointcloud_output)
 
+    if args.check_benchmark:
+        benchmark_output = args.output.parent / f"{args.output.name}_benchmark"
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "traversability.benchmark_suite",
+                "--output",
+                str(benchmark_output),
+            ],
+            check=True,
+        )
+        verify_benchmark_outputs(benchmark_output)
+
     Console().print("[green]verification passed[/green]")
 
 
@@ -202,6 +217,22 @@ def verify_pointcloud_outputs(output: Path) -> None:
     require(int(summary["observed_cells"]) >= 10_000, "too few observed elevation cells")
     require(float(summary["max_risk"]) <= 0.90, "point-cloud plan max risk exceeded threshold")
     require(float(summary["feasible_rate"]) >= 0.80, "point-cloud plan feasibility below threshold")
+
+
+def verify_benchmark_outputs(output: Path) -> None:
+    summary_path = output / "benchmark_summary.csv"
+    scenarios_path = output / "benchmark_scenarios.csv"
+    require(summary_path.exists(), f"missing {summary_path}")
+    require(scenarios_path.exists(), f"missing {scenarios_path}")
+    with summary_path.open(encoding="utf-8") as file:
+        summary = {row["metric"]: row["value"] for row in csv.DictReader(file)}
+    require(int(float(summary["scenarios"])) >= 3, "benchmark did not run enough scenarios")
+    require(float(summary["multilevel_success_rate"]) >= 0.95, "benchmark multilevel success rate too low")
+    require(float(summary["single_success_rate"]) >= 0.95, "benchmark single-level success rate too low")
+    require(float(summary["mean_runtime_speedup"]) >= 1.5, "benchmark speedup below threshold")
+    require(float(summary["mean_expanded_ratio"]) >= 1.5, "benchmark expanded-node ratio below threshold")
+    require(float(summary["mean_multilevel_max_risk"]) <= 0.90, "benchmark mean max risk too high")
+    require(float(summary["mean_multilevel_feasible_rate"]) >= 0.80, "benchmark feasible rate too low")
 
 
 if __name__ == "__main__":

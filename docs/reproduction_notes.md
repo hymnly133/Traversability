@@ -34,6 +34,7 @@ This repository therefore implements an independent prototype that reproduces th
 - ablation benchmark comparing multilevel planning against a single-level full-resolution baseline
 - pure-pursuit path tracking simulation with execution risk and stability checks
 - point-cloud to elevation-grid import path that approximates the PCL/SLAM map input boundary
+- multi-seed benchmark suite for aggregate success-rate, speed, risk, and feasibility statistics
 - CSV and PNG artifacts for inspection
 - verification script with numeric gates
 
@@ -58,7 +59,7 @@ Expected verification gates:
 Full verification with rolling replanning:
 
 ```powershell
-.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime --check-ablation --check-tracking --check-pointcloud
+.venv\Scripts\python.exe -m traversability.verify_reproduction --check-realtime --check-ablation --check-tracking --check-pointcloud --check-benchmark
 ```
 
 Additional gates:
@@ -72,6 +73,7 @@ Additional gates:
 - tracking mean error is at most 0.20 m and final error is at most 0.55 m
 - tracked trajectory max risk is at most 0.95 and feasible rate is at least 75%
 - point-cloud-derived elevation planning succeeds with max risk at most 0.90
+- benchmark suite reaches at least 95% multilevel success and at least 1.5x mean speedup
 
 ## Known Gaps Against the Full Paper
 
