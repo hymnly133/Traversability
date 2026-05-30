@@ -39,6 +39,7 @@ def main() -> None:
     subprocess.run([sys.executable, "-m", "traversability.verify_wheeled_stability"], check=True)
     subprocess.run([sys.executable, "-m", "traversability.verify_hybrid_local_planner"], check=True)
     subprocess.run([sys.executable, "-m", "traversability.verify_paper_pipeline"], check=True)
+    subprocess.run([sys.executable, "-m", "traversability.verify_paper_receding"], check=True)
     subprocess.run([sys.executable, "-m", "traversability.verify_pointcloud_io"], check=True)
 
     command = [

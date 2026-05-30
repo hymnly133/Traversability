@@ -32,6 +32,7 @@ DOI: 10.1109/TRO.2025.3577015
 - 论文 V-C 对应的 wheeled robot 几何稳定性原型：轮弧接触面投影、高度补偿、wheel support polygon、CoM/ZMP 判断和 body collision
 - 论文 V-D 对应的 Hybrid A* local planner 原型：motion primitives、局部窗口、全局路径 heuristic、traversability 与 tracked stability 节点过滤
 - 论文式 NDT global planner 到 Hybrid A* local planner 的集成链路 demo
+- 论文式 receding-horizon NDT global + Hybrid local 多周期重规划 demo，包含中途地图障碍更新
 - 局部迭代几何平滑和风险验证
 - 局部轨迹优化，可在路径质量模式启用，在实时 benchmark 中关闭以保持低延迟
 - 滚动窗口实时重规划 benchmark，包含动态障碍注入
@@ -122,6 +123,18 @@ uv pip install -e .
 
 ```powershell
 .venv\Scripts\python.exe -m traversability.verify_paper_pipeline
+```
+
+运行论文式 receding-horizon NDT global + Hybrid local 多周期重规划：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.paper_receding_demo
+```
+
+单独验证多周期重规划链路：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.verify_paper_receding
 ```
 
 运行完整验证，包括滚动重规划、ablation、路径跟踪、点云输入和多场景 benchmark：
@@ -244,6 +257,7 @@ src/traversability/ndt_map.py            # 论文式 NDT implicit voxel map 与 
 src/traversability/ndt_planner.py        # 论文式 3D voxel A* 与连通可通行体素集
 src/traversability/hybrid_local_planner.py # 论文式 Hybrid A* local planner
 src/traversability/paper_pipeline_demo.py # NDT global + Hybrid local 集成链路
+src/traversability/paper_receding_demo.py # NDT global + Hybrid local 多周期重规划
 src/traversability/implicit_map.py       # 连续地形查询/隐式地图 facade
 src/traversability/planner.py            # 多层 terrain-aware A*
 src/traversability/trajectory_optimizer.py # 局部轨迹优化
@@ -267,6 +281,7 @@ src/traversability/verify_tracked_stability.py # tracked robot 稳定性验证
 src/traversability/verify_wheeled_stability.py # wheeled robot 稳定性验证
 src/traversability/verify_hybrid_local_planner.py # Hybrid A* local planner 验证
 src/traversability/verify_paper_pipeline.py # NDT global + Hybrid local 集成验证
+src/traversability/verify_paper_receding.py # NDT global + Hybrid local 多周期重规划验证
 runs/                                  # 运行后生成的结果
 ```
 
