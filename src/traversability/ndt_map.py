@@ -59,13 +59,43 @@ class NDTMetric:
 class NDTImplicitMap:
     """Sparse NDT voxel map matching the paper's global implicit-map boundary."""
 
-    def __init__(self, points: np.ndarray, config: NDTConfig | None = None):
+    def __init__(self, points: np.ndarray | None = None, config: NDTConfig | None = None, origin: np.ndarray | None = None):
         self.config = config or NDTConfig()
-        self.points = validate_points(points)
-        self.origin = np.min(self.points, axis=0)
-        self.cells = build_cells(self.points, self.origin, self.config.voxel_size)
-        self.occupied = {key for key, cell in self.cells.items() if cell.count >= self.config.saturation_count}
+        if points is None:
+            if origin is None:
+                raise ValueError("origin is required when constructing an empty NDT map")
+            self.points = np.empty((0, 3), dtype=np.float64)
+            self.origin = np.asarray(origin, dtype=np.float64)
+            if self.origin.shape != (3,):
+                raise ValueError("origin must be a 3-vector")
+            self.cells: dict[tuple[int, int, int], NDTCell] = {}
+        else:
+            self.points = validate_points(points)
+            self.origin = np.asarray(origin, dtype=np.float64) if origin is not None else np.min(self.points, axis=0)
+            self.cells = {}
+            self.integrate_points(self.points)
+        self.occupied = self.occupied_keys()
         self.metrics: dict[tuple[int, int, int], NDTMetric] = {}
+
+    @classmethod
+    def empty(cls, origin: tuple[float, float, float] | np.ndarray, config: NDTConfig | None = None) -> "NDTImplicitMap":
+        return cls(points=None, config=config, origin=np.asarray(origin, dtype=np.float64))
+
+    def integrate_points(self, points: np.ndarray) -> None:
+        new_points = validate_points(points)
+        for point in new_points:
+            key = self.key_from_xyz(point)
+            self.cells[key] = update_cell(self.cells.get(key), key, point)
+        self.points = np.vstack([self.points, new_points]) if len(self.points) else new_points.copy()
+        self.occupied = self.occupied_keys()
+        self.metrics = {}
+
+    def occupied_keys(self) -> set[tuple[int, int, int]]:
+        return {key for key, cell in self.cells.items() if cell.count >= self.config.saturation_count}
+
+    def key_from_xyz(self, xyz: np.ndarray) -> tuple[int, int, int]:
+        index = np.floor((np.asarray(xyz, dtype=np.float64) - self.origin) / self.config.voxel_size).astype(np.int64)
+        return int(index[0]), int(index[1]), int(index[2])
 
     def compute_metrics(self) -> dict[tuple[int, int, int], NDTMetric]:
         if self.metrics:
@@ -193,6 +223,18 @@ def build_cells(points: np.ndarray, origin: np.ndarray, voxel_size: float) -> di
         covariance += np.eye(3) * 1e-8
         cells[key] = NDTCell(key=key, count=len(values), mean=mean, covariance=covariance)
     return cells
+
+
+def update_cell(cell: NDTCell | None, key: tuple[int, int, int], point: np.ndarray) -> NDTCell:
+    point = np.asarray(point, dtype=np.float64)
+    if cell is None:
+        return NDTCell(key=key, count=1, mean=point.copy(), covariance=np.zeros((3, 3), dtype=np.float64))
+    old_count = cell.count
+    count = old_count + 1
+    delta = point - cell.mean
+    mean = cell.mean + delta / count
+    covariance = (old_count / count) * (cell.covariance + np.outer(delta, delta) / count)
+    return NDTCell(key=key, count=count, mean=mean, covariance=covariance)
 
 
 def fuse_cells(cells: Iterable[NDTCell]) -> tuple[int, np.ndarray, np.ndarray]:

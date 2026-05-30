@@ -24,6 +24,7 @@ This repository therefore implements an independent prototype that reproduces th
 
 - large rough terrain represented as an elevation grid
 - NDT-style implicit voxel map prototype with per-voxel point count, mean, covariance, and neighborhood Gaussian fusion
+- incremental NDT map integration with online per-voxel mean/covariance updates matching the paper's map-integration equation
 - implicit terrain-map facade for continuous height, slope, roughness, step, risk, and obstacle queries
 - paper-style SVD terrain metrics for roughness and slope, plus visible-neighborhood sparsity
 - checkpoint/ray-casting traversal-risk assessment split into terrain, collision, and falling risks
@@ -64,7 +65,7 @@ Run:
 Expected verification gates:
 
 - implicit map grid-point and continuous-query checks pass
-- NDT implicit voxel-map checks pass for SVD roughness/slope, sparsity, and terrain/collision/falling traversal-risk detection
+- NDT implicit voxel-map checks pass for incremental integration, SVD roughness/slope, sparsity, and terrain/collision/falling traversal-risk detection
 - NDT global-planner checks pass for connected traversable voxel set construction and 3-D A* avoidance of risky voxels
 - tracked-stability checks pass for flat main-track support, flipper-assisted ledge support, and body-collision rejection
 - wheeled-stability checks pass for flat four-wheel support, side-step roll support, body-collision rejection, and trench infeasibility
@@ -107,7 +108,7 @@ Additional gates:
 The current prototype is not yet a full field-system reproduction. Missing parts include:
 
 - real sensor logs or field datasets
-- octree-backed online map integration and incremental connected-set updates
+- octree-backed storage and incremental connected-set updates
 - replacing the legacy elevation-grid planner path with the NDT voxel planner in the main demo pipeline
 - richer large-scale experiment scenes matching the paper's stairs, rubble, grass, hill, bridge, and field layouts
 - kinodynamic constraints and controller-level actuator limits
