@@ -58,6 +58,10 @@ uv pip install -e .
 
 ## 运行论文复刻 demo
 
+主流程说明文档见：
+
+- `docs/paper_mainline_workflow.md`
+
 ```powershell
 .venv\Scripts\python.exe -m traversability.multilevel_demo
 ```
