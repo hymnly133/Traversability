@@ -266,6 +266,10 @@ h2 {
   border-radius: 999px;
   background: linear-gradient(90deg, #4edfd1, #e6cf68, #ff6658);
 }
+.dist { display: grid; gap: 7px; margin-top: 10px; }
+.hist { display: grid; grid-template-columns: 74px 1fr auto; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; }
+.hist-bars { display: grid; grid-auto-flow: column; align-items: end; gap: 2px; height: 24px; }
+.hist-bars i { display: block; min-width: 4px; background: rgba(78,223,209,.62); border-radius: 1px 1px 0 0; }
 @media (max-width: 1100px) {
   body { overflow: auto; }
   .app { min-height: 100vh; height: auto; grid-template-columns: 1fr; }
@@ -361,6 +365,7 @@ h2 {
     <div class="section">
       <h2>体素与可通行性</h2>
       <div class="metrics" id="implicitMetrics"></div>
+      <div class="dist" id="distributionMetrics"></div>
       <p class="hint">Traversal cost</p>
       <div class="costbar" aria-hidden="true"></div>
       <p class="hint">青色低风险，黄色中等，红色为不可通行或高风险。</p>
@@ -423,6 +428,7 @@ let devVersion = null;
 let drag = null;
 let needsTransform = true;
 let retainedPlan = null;
+let jobPoll = null;
 
 const view = {
   yaw: -Math.PI / 4,
@@ -474,17 +480,61 @@ async function run(path, body = {}) {
     retainPlanIfAvailable();
     needsTransform = true;
     syncUi();
-    const ok = state.plan?.summary?.success;
-    setStatus(ok ? "ok" : (state.plan ? "fail" : "ok"), state.plan ? (ok ? "就绪" : "无可行路径") : "空闲");
+    if (state.job?.status === "running") {
+      startJobPolling();
+      setStatus("busy", `计算中 · ${state.job.stage}`);
+    } else {
+      const ok = state.plan?.summary?.success;
+      setStatus(ok ? "ok" : (state.plan ? "fail" : "ok"), state.plan ? (ok ? "就绪" : "无可行路径") : "空闲");
+    }
   } catch (err) {
     console.error(err);
     setStatus("fail", "错误");
   } finally {
+    if (!state?.job || state.job.status !== "running") busy = false;
+  }
+}
+function startJobPolling() {
+  if (jobPoll) clearInterval(jobPoll);
+  jobPoll = setInterval(pollJob, 420);
+}
+async function pollJob() {
+  try {
+    const res = await fetch("/api/job", { cache: "no-store" });
+    if (!res.ok) return;
+    state = await res.json();
+    retainPlanIfAvailable();
+    mergePlanPartial();
+    syncUi();
+    if (state.job?.status === "running") {
+      setStatus("busy", `计算中 · ${state.job.stage}`);
+      return;
+    }
+    clearInterval(jobPoll);
+    jobPoll = null;
     busy = false;
+    const ok = state.plan?.summary?.success;
+    setStatus(ok ? "ok" : "fail", ok ? "就绪" : "无可行路径");
+  } catch (err) {
+    console.error(err);
   }
 }
 function retainPlanIfAvailable() {
   if (state?.plan) retainedPlan = state.plan;
+}
+function mergePlanPartial() {
+  if (!state?.job?.partial) return;
+  retainedPlan = deepMerge(retainedPlan || {}, state.job.partial);
+}
+function deepMerge(target, source) {
+  for (const [key, value] of Object.entries(source || {})) {
+    if (value && typeof value === "object" && !Array.isArray(value) && target[key] && typeof target[key] === "object" && !Array.isArray(target[key])) {
+      deepMerge(target[key], value);
+    } else {
+      target[key] = value;
+    }
+  }
+  return target;
 }
 function visualPlan() {
   return state?.plan || retainedPlan;
@@ -735,15 +785,29 @@ function drawPoints(q, points, color, size, alpha = 1) {
 function drawVoxels(q) {
   const plan = visualPlan();
   if (!layers.voxels || !plan?.voxels) return;
-  const size = Math.max(4, Math.min(13, view.scale * (plan.implicitMap?.voxelSize || .18) * .72));
+  const voxel = plan.implicitMap?.voxelSize || .18;
   for (const v of plan.voxels) {
     q.push(depthOf(v[0], v[1], v[2]), ctx => {
-      const p = project(v[0], v[1], v[2]);
-      ctx.fillStyle = costColor(v[3], v[4], .64);
-      ctx.strokeStyle = v[4] > 0 ? "rgba(255,244,230,.45)" : "rgba(2,4,3,.34)";
-      ctx.lineWidth = 1;
-      ctx.fillRect(p[0] - size / 2, p[1] - size / 2, size, size);
-      ctx.strokeRect(p[0] - size / 2, p[1] - size / 2, size, size);
+      const half = voxel * .5;
+      const corners = [
+        project(v[0] - half, v[1] - half, v[2]),
+        project(v[0] + half, v[1] - half, v[2]),
+        project(v[0] + half, v[1] + half, v[2]),
+        project(v[0] - half, v[1] + half, v[2])
+      ];
+      ctx.fillStyle = costColor(v[3], v[4], .70);
+      ctx.beginPath();
+      ctx.moveTo(corners[0][0], corners[0][1]);
+      ctx.lineTo(corners[1][0], corners[1][1]);
+      ctx.lineTo(corners[2][0], corners[2][1]);
+      ctx.lineTo(corners[3][0], corners[3][1]);
+      ctx.closePath();
+      ctx.fill();
+      if (v[4] > 0) {
+        ctx.strokeStyle = "rgba(255,244,230,.38)";
+        ctx.lineWidth = .7;
+        ctx.stroke();
+      }
     });
   }
 }
@@ -993,11 +1057,12 @@ function syncUi() {
     ["占用体素", s ? s.occupied_voxels : "--"],
     ["可通行体素", s ? s.shared_traversable_voxels : "--"],
     ["风险体素", im ? im.risk : "--", im && im.risk > im.finite * .45],
-    ["voxel size", im ? fmt(im.voxelSize, 2, " m") : "--"],
+    ["voxel xy", im ? fmt(im.voxelSize, 2, " m") : "--"],
+    ["voxel z", im ? fmt(im.verticalVoxelSize, 2, " m") : "--"],
     ["fusion radius", im ? fmt(im.fusionRadius, 2, " m") : "--"],
-    ["mean roughness", im ? fmt(im.meanRoughness, 3) : "--"],
-    ["mean slope", im ? fmt(im.meanSlope, 3) : "--"]
+    ["mean roughness", im ? fmt(im.meanRoughness, 3) : "--"]
   ]);
+  document.getElementById("distributionMetrics").innerHTML = distributionHtml(plan?.distributions || im?.distributions);
   syncStages();
   syncFocus();
   syncLayerChecks();
@@ -1008,6 +1073,21 @@ function syncUi() {
   document.getElementById("stepLabel").textContent = `${Number(state.sim.stepDistance).toFixed(2)} m`;
   document.getElementById("windowLabel").textContent = `${Number(state.sim.localWindowRadius).toFixed(2)} m`;
   document.getElementById("brushLabel").textContent = `${brushRadius.toFixed(2)} m`;
+}
+function distributionHtml(d) {
+  if (!d) return "<p class=\"hint\">等待阶段数据同步。</p>";
+  return [
+    histMarkup("cost", d.risk?.cost || d.cost),
+    histMarkup("height", d.cloud?.z),
+    histMarkup("z layers", d.ndt?.zLayers),
+    histMarkup("pts/vox", d.ndt?.pointsPerVoxel)
+  ].filter(Boolean).join("");
+}
+function histMarkup(label, hist) {
+  if (!hist?.bins?.length) return "";
+  const max = Math.max(1, ...hist.bins);
+  const bars = hist.bins.map(v => `<i style="height:${Math.max(2, Math.round(v / max * 24))}px"></i>`).join("");
+  return `<div class="hist"><span>${label}</span><div class="hist-bars">${bars}</div><b>${hist.min}..${hist.max}</b></div>`;
 }
 function updateHoverReadout() {
   const el = document.getElementById("hoverReadout");

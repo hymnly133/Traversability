@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Iterable
 
 import numpy as np
@@ -12,6 +13,7 @@ from traversability.pointcloud import validate_points
 @dataclass(frozen=True)
 class NDTConfig:
     voxel_size: float = 0.4
+    vertical_voxel_size: float | None = None
     fusion_radius: float = 0.75
     saturation_count: int = 4
     roughness_weight: float = 0.35
@@ -23,6 +25,61 @@ class NDTConfig:
     complexity_threshold: float = 1.0
     robot_radius: float = 0.45
     robot_height: float = 0.60
+
+    @property
+    def z_voxel_size(self) -> float:
+        return self.vertical_voxel_size if self.vertical_voxel_size is not None else self.voxel_size
+
+    @property
+    def voxel_scale(self) -> np.ndarray:
+        return np.array([self.voxel_size, self.voxel_size, self.z_voxel_size], dtype=np.float64)
+
+
+def adaptive_ndt_config(
+    points: np.ndarray,
+    resolution: float,
+    *,
+    min_voxel_multiplier: float = 1.7,
+    density_multiplier: float = 3.2,
+    max_voxel_size: float = 0.24,
+    vertical_multiplier: float = 0.48,
+    min_vertical_multiplier: float = 0.85,
+    fusion_multiplier: float = 3.0,
+    saturation_count: int = 2,
+    slope_threshold_rad: float = math.radians(50.0),
+    complexity_threshold: float = 0.92,
+    robot_radius: float = 0.28,
+    robot_height: float = 0.55,
+) -> NDTConfig:
+    """Choose NDT resolution from the observed point spacing instead of a fixed coarse voxel size."""
+    points = validate_points(points)
+    if len(points) < 2:
+        xy_spacing = float(resolution)
+    else:
+        xy_min = np.min(points[:, :2], axis=0)
+        xy_max = np.max(points[:, :2], axis=0)
+        span = np.maximum(xy_max - xy_min, float(resolution))
+        area = float(span[0] * span[1])
+        xy_spacing = math.sqrt(area / max(len(points), 1))
+    lower = max(float(resolution) * min_voxel_multiplier, xy_spacing * density_multiplier)
+    voxel_size = float(np.clip(lower, float(resolution) * min_voxel_multiplier, max_voxel_size))
+    vertical_voxel_size = float(
+        np.clip(
+            voxel_size * vertical_multiplier,
+            float(resolution) * min_vertical_multiplier,
+            voxel_size,
+        )
+    )
+    return NDTConfig(
+        voxel_size=voxel_size,
+        vertical_voxel_size=vertical_voxel_size,
+        fusion_radius=voxel_size * fusion_multiplier,
+        saturation_count=saturation_count,
+        slope_threshold_rad=slope_threshold_rad,
+        complexity_threshold=complexity_threshold,
+        robot_radius=robot_radius,
+        robot_height=robot_height,
+    )
 
 
 @dataclass(frozen=True)
@@ -155,6 +212,7 @@ class NDTImplicitMap:
         self.config = config or NDTConfig()
         self.metrics: dict[tuple[int, int, int], NDTMetric] = {}
         self.connected_cache: dict[tuple[int, frozenset[tuple[int, int, int]]], object] = {}
+        self._occupied_min_z: int | None = None
         if points is None:
             if origin is None:
                 raise ValueError("origin is required when constructing an empty NDT map")
@@ -186,12 +244,13 @@ class NDTImplicitMap:
         self.occupied = self.occupied_keys()
         self.metrics = {}
         self.connected_cache = {}
+        self._occupied_min_z = None
 
     def occupied_keys(self) -> set[tuple[int, int, int]]:
         return {key for key, cell in self.cells.items() if cell.count >= self.config.saturation_count}
 
     def key_from_xyz(self, xyz: np.ndarray) -> tuple[int, int, int]:
-        index = np.floor((np.asarray(xyz, dtype=np.float64) - self.origin) / self.config.voxel_size).astype(np.int64)
+        index = np.floor((np.asarray(xyz, dtype=np.float64) - self.origin) / self.config.voxel_scale).astype(np.int64)
         return int(index[0]), int(index[1]), int(index[2])
 
     def compute_metrics(self) -> dict[tuple[int, int, int], NDTMetric]:
@@ -243,8 +302,8 @@ class NDTImplicitMap:
     def fuse_neighborhood(self, key: tuple[int, int, int]) -> tuple[int, np.ndarray, np.ndarray] | None:
         radius_cells = max(1, int(math.ceil(self.config.fusion_radius / self.config.voxel_size)))
         cells = []
-        for neighbor_key in self.octree.neighborhood(key, radius_cells):
-            cell = self.cells.get(neighbor_key)
+        for dx, dy, dz in cube_neighbor_offsets(radius_cells):
+            cell = self.cells.get((key[0] + dx, key[1] + dy, key[2] + dz))
             if cell is not None and cell.count > 0:
                 cells.append(cell)
         if not cells:
@@ -253,18 +312,18 @@ class NDTImplicitMap:
 
     def visible_sparsity(self, key: tuple[int, int, int], normal: np.ndarray) -> float:
         radius_cells = max(1, int(math.ceil(self.config.fusion_radius / self.config.voxel_size)))
-        center = self.voxel_center(key)
         densities = []
-        for neighbor_key in neighbor_keys(key, radius_cells):
-            if neighbor_key == key:
+        for dx, dy, dz, ux, uy, uz in sparsity_neighbor_offsets(
+            radius_cells,
+            round(self.config.voxel_size, 6),
+            round(self.config.z_voxel_size, 6),
+            round(self.config.fusion_radius, 6),
+        ):
+            if ux * normal[0] + uy * normal[1] + uz * normal[2] > 0.15:
                 continue
-            offset = self.voxel_center(neighbor_key) - center
-            distance = float(np.linalg.norm(offset))
-            if distance <= 1e-9 or distance > self.config.fusion_radius:
-                continue
-            if float(np.dot(offset / distance, normal)) > 0.15:
-                continue
-            count = self.cells.get(neighbor_key).count if neighbor_key in self.cells else 0
+            neighbor_key = (key[0] + dx, key[1] + dy, key[2] + dz)
+            cell = self.cells.get(neighbor_key)
+            count = cell.count if cell is not None else 0
             densities.append(min(1.0, count / max(self.config.saturation_count, 1)))
         if not densities:
             return 1.0
@@ -293,20 +352,31 @@ class NDTImplicitMap:
     def cast_down(self, xy: np.ndarray, start_z: float) -> tuple[int, int, int] | None:
         ix = int(math.floor((xy[0] - self.origin[0]) / self.config.voxel_size))
         iy = int(math.floor((xy[1] - self.origin[1]) / self.config.voxel_size))
-        iz_start = int(math.floor((start_z - self.origin[2]) / self.config.voxel_size))
-        min_z = min(key[2] for key in self.occupied)
+        iz_start = int(math.floor((start_z - self.origin[2]) / self.config.z_voxel_size))
+        min_z = self.occupied_min_z()
         for iz in range(iz_start, min_z - 1, -1):
             key = (ix, iy, iz)
             if key in self.occupied:
                 return key
         return None
 
+    def occupied_min_z(self) -> int:
+        if self._occupied_min_z is None:
+            self._occupied_min_z = min(key[2] for key in self.occupied)
+        return self._occupied_min_z
+
     def voxel_center(self, key: tuple[int, int, int]) -> np.ndarray:
-        return self.origin + (np.asarray(key, dtype=np.float64) + 0.5) * self.config.voxel_size
+        return self.origin + (np.asarray(key, dtype=np.float64) + 0.5) * self.config.voxel_scale
 
 
-def build_cells(points: np.ndarray, origin: np.ndarray, voxel_size: float) -> dict[tuple[int, int, int], NDTCell]:
-    indices = np.floor((points - origin) / voxel_size).astype(np.int64)
+def build_cells(
+    points: np.ndarray,
+    origin: np.ndarray,
+    voxel_size: float,
+    vertical_voxel_size: float | None = None,
+) -> dict[tuple[int, int, int], NDTCell]:
+    scale = np.array([voxel_size, voxel_size, vertical_voxel_size or voxel_size], dtype=np.float64)
+    indices = np.floor((points - origin) / scale).astype(np.int64)
     buckets: dict[tuple[int, int, int], list[np.ndarray]] = {}
     for index, point in zip(indices, points):
         buckets.setdefault((int(index[0]), int(index[1]), int(index[2])), []).append(point)
@@ -381,6 +451,39 @@ def neighbor_keys(key: tuple[int, int, int], radius: int) -> Iterable[tuple[int,
         for dy in range(-radius, radius + 1):
             for dz in range(-radius, radius + 1):
                 yield key[0] + dx, key[1] + dy, key[2] + dz
+
+
+@lru_cache(maxsize=32)
+def cube_neighbor_offsets(radius: int) -> tuple[tuple[int, int, int], ...]:
+    return tuple(
+        (dx, dy, dz)
+        for dx in range(-radius, radius + 1)
+        for dy in range(-radius, radius + 1)
+        for dz in range(-radius, radius + 1)
+    )
+
+
+@lru_cache(maxsize=64)
+def sparsity_neighbor_offsets(
+    radius: int,
+    voxel_size: float,
+    vertical_voxel_size: float,
+    fusion_radius: float,
+) -> tuple[tuple[int, int, int, float, float, float], ...]:
+    offsets = []
+    for dx in range(-radius, radius + 1):
+        for dy in range(-radius, radius + 1):
+            for dz in range(-radius, radius + 1):
+                if dx == 0 and dy == 0 and dz == 0:
+                    continue
+                ox = dx * voxel_size
+                oy = dy * voxel_size
+                oz = dz * vertical_voxel_size
+                distance = math.sqrt(ox * ox + oy * oy + oz * oz)
+                if distance <= 1e-9 or distance > fusion_radius:
+                    continue
+                offsets.append((dx, dy, dz, ox / distance, oy / distance, oz / distance))
+    return tuple(offsets)
 
 
 def circular_checkpoints(center: np.ndarray, radius: float, voxel_size: float) -> list[np.ndarray]:

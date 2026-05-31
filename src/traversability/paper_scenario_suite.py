@@ -10,7 +10,7 @@ import numpy as np
 from rich.console import Console
 from rich.table import Table
 
-from traversability.ndt_map import NDTConfig, NDTImplicitMap
+from traversability.ndt_map import NDTConfig, NDTImplicitMap, adaptive_ndt_config
 from traversability.ndt_planner import plan_ndt_global
 from traversability.paper_pipeline_demo import sample_points
 
@@ -42,7 +42,7 @@ def main() -> None:
 
 def run_scenario(scenario: Scenario, output_dir: Path) -> dict:
     points = sample_points(scenario.height, scenario.obstacle, scenario.resolution, scenario.origin)
-    ndt_map = NDTImplicitMap(points, ndt_config(scenario.resolution))
+    ndt_map = NDTImplicitMap(points, ndt_config(points, scenario.resolution))
     result = plan_ndt_global(ndt_map, scenario.start, scenario.goal)
     metric_summary = summarize_metrics(ndt_map)
     plot_scenario(output_dir, scenario, result.path_xyz)
@@ -61,13 +61,16 @@ def run_scenario(scenario: Scenario, output_dir: Path) -> dict:
     }
 
 
-def ndt_config(resolution: float) -> NDTConfig:
-    voxel_size = max(0.33, resolution * 5.2)
-    return NDTConfig(
-        voxel_size=voxel_size,
-        fusion_radius=voxel_size * 2.4,
-        saturation_count=2,
-        slope_threshold_rad=np.deg2rad(50.0),
+def ndt_config(points: np.ndarray, resolution: float) -> NDTConfig:
+    return adaptive_ndt_config(
+        points,
+        resolution,
+        min_voxel_multiplier=2.0,
+        density_multiplier=3.8,
+        max_voxel_size=0.26,
+        vertical_multiplier=0.78,
+        min_vertical_multiplier=1.15,
+        fusion_multiplier=3.0,
         complexity_threshold=0.96,
         robot_radius=0.30,
         robot_height=0.58,

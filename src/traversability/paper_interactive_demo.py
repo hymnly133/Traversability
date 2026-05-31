@@ -17,7 +17,7 @@ from rich.console import Console
 
 from traversability.hybrid_local_planner import HybridLocalPlannerConfig, NDTLocalTraversabilityGuide, plan_hybrid_local
 from traversability.implicit_map import ImplicitTerrainMap
-from traversability.ndt_map import NDTConfig, NDTImplicitMap
+from traversability.ndt_map import NDTConfig, NDTImplicitMap, adaptive_ndt_config
 from traversability.ndt_planner import plan_ndt_global
 from traversability.paper_pipeline_demo import crop_pointcloud_local_window, make_pipeline_terrain, point_cloud_layer_from_points, sample_points
 from traversability.paper_receding_demo import inject_dynamic_obstacle, yaw_from_path
@@ -117,6 +117,8 @@ class PaperInteractiveDemo:
     cached_ndt_map: NDTImplicitMap | None = None
     cached_traversability_guide: NDTLocalTraversabilityGuide | None = None
     cached_metrics: dict[tuple[int, int, int], Any] | None = None
+    active_job_id: int = 0
+    active_job: dict[str, Any] | None = None
     lock: threading.RLock = field(default_factory=threading.RLock)
 
     def __post_init__(self) -> None:
@@ -160,11 +162,15 @@ class PaperInteractiveDemo:
             payload: dict[str, Any] = {
                 "sim": self.sim_payload(),
                 "plan": self.last_plan,
+                "job": self.active_job,
                 "scenarios": scenario_options(self.scenarios),
             }
             if include_terrain:
-                height, obstacle, _, _, _, _ = self.planning_context()
-                origin = self.cached_layer_origin if self.cached_layer_origin is not None else self.origin
+                if self.cached_height is not None and self.cached_obstacle is not None and self.cached_layer_origin is not None:
+                    height, obstacle, origin = self.cached_height, self.cached_obstacle, self.cached_layer_origin
+                else:
+                    height, obstacle = self.current_terrain()
+                    origin = self.origin
                 payload["terrain"] = terrain_payload(height, obstacle, self.resolution, origin, self.terrain_version)
             return payload
 
@@ -246,81 +252,124 @@ class PaperInteractiveDemo:
 
     def plan(self) -> dict[str, Any]:
         with self.lock:
-            begin = time.perf_counter()
-            height, obstacle, ndt_map, traversability_guide, metrics, ndt_ms = self.planning_context()
-            terrain_origin = self.cached_layer_origin if self.cached_layer_origin is not None else self.origin
-            t0 = time.perf_counter()
-            global_result = plan_ndt_global(ndt_map, (self.start[0], self.start[1], 0.0), (self.goal[0], self.goal[1], 0.0))
-            global_ms = elapsed_ms(t0)
-            global_xy = [(x, y) for x, y, _ in global_result.path_xyz]
-            local_result = None
-            local_bounds = None
-            temporary_elevation_map = None
-            if global_result.success and len(global_xy) >= 2:
-                local_layer = crop_pointcloud_local_window(
-                    "paper_interactive_local",
-                    ndt_map.points,
-                    self.resolution,
-                    center_xy=self.start,
-                    radius=self.local_window_radius,
-                )
-                local_bounds = layer_bounds(local_layer.height.shape, local_layer.resolution, local_layer.origin_xy)
-                temporary_elevation_map = temporary_elevation_payload(
-                    local_layer,
-                    self.terrain_version,
-                    self.start,
-                    self.local_window_radius,
-                )
-                local_result = plan_hybrid_local(
-                    ImplicitTerrainMap(local_layer),
-                    start=(self.start[0], self.start[1], self.yaw),
-                    global_path=global_xy,
-                    config=hybrid_config(self.local_window_radius),
-                    global_traversability=traversability_guide,
-                )
+            return self.run_plan_locked()
 
-            local_path = local_result.path if local_result is not None else []
-            local_path_xyz = path_with_height(local_path, height, self.resolution, terrain_origin)
-            summary = {
-                "success": bool(global_result.success and local_result is not None and local_result.success),
-                "scenario": self.scenario_key,
-                "cycle": self.cycle,
-                "total_ms": elapsed_ms(begin),
-                "ndt_ms": ndt_ms,
-                "global_ms": global_ms,
-                "local_ms": local_result.runtime_ms if local_result is not None else 0.0,
-                "raw_points": int(len(ndt_map.points)),
-                "occupied_voxels": int(len(ndt_map.occupied)),
-                "global_expanded": global_result.expanded_nodes,
-                "local_expanded": local_result.expanded_nodes if local_result is not None else 0,
-                "global_path_length_m": global_result.path_length_m,
-                "local_path_length_m": local_result.path_length_m if local_result is not None else 0.0,
-                "mean_traversal_cost": finite_or_none(global_result.mean_traversal_cost),
-                "max_traversal_cost": finite_or_none(global_result.max_traversal_cost),
-                "local_mean_risk": finite_or_none(local_result.mean_risk if local_result is not None else float("inf")),
-                "local_min_stability": local_result.min_stability if local_result is not None else 0.0,
-                "shared_traversable_voxels": len(traversability_guide.traversable_keys),
-                "global_traversability_checks": local_result.global_traversability_checks if local_result is not None else 0,
-                "global_normal_initializations": local_result.global_normal_initializations if local_result is not None else 0,
-                "local_traversable_voxels": local_result.local_traversable_voxels if local_result is not None else 0,
-                "local_cells": int((local_bounds["rows"] * local_bounds["cols"]) if local_bounds else 0),
-                "global_cells": int(height.size),
-                "planning_map_source": "point_cloud_derived",
+    def start_async_plan(self) -> dict[str, Any]:
+        with self.lock:
+            self.active_job_id += 1
+            job_id = self.active_job_id
+            self.active_job = {
+                "id": job_id,
+                "status": "running",
+                "stage": "cloud",
+                "version": 0,
+                "startedAt": time.time(),
+                "updatedAt": time.time(),
+                "stages": [],
+                "partial": {},
             }
-            self.last_plan = {
-                "summary": summary,
+            payload = self.state(include_terrain=True)
+        thread = threading.Thread(target=self.run_async_plan, args=(job_id,), daemon=True)
+        thread.start()
+        return payload
+
+    def run_async_plan(self, job_id: int) -> None:
+        try:
+            self.run_plan_locked(job_id=job_id)
+        except Exception as exc:
+            with self.lock:
+                if self.active_job is not None and self.active_job.get("id") == job_id:
+                    self.active_job.update({"status": "failed", "stage": "failed", "error": str(exc), "updatedAt": time.time()})
+
+    def run_plan_locked(self, job_id: int | None = None) -> dict[str, Any]:
+        begin = time.perf_counter()
+        height, obstacle, ndt_map, traversability_guide, metrics, ndt_ms = self.planning_context(job_id=job_id)
+        terrain_origin = self.cached_layer_origin if self.cached_layer_origin is not None else self.origin
+        self.update_job(job_id, "risk", {"implicitMap": implicit_map_payload(ndt_map, metrics), "voxels": voxel_payload(ndt_map, metrics)})
+        t0 = time.perf_counter()
+        global_result = plan_ndt_global(ndt_map, (self.start[0], self.start[1], 0.0), (self.goal[0], self.goal[1], 0.0))
+        global_ms = elapsed_ms(t0)
+        global_xy = [(x, y) for x, y, _ in global_result.path_xyz]
+        self.update_job(
+            job_id,
+            "global",
+            {
                 "globalPath": [[round(x, 4), round(y, 4)] for x, y in global_xy],
                 "globalPath3d": [[round(x, 4), round(y, 4), round(z, 4)] for x, y, z in global_result.path_xyz],
-                "localPath": [[round(x, 4), round(y, 4), round(yaw, 4)] for x, y, yaw in local_path],
-                "localPath3d": local_path_xyz,
-                "localWindow": local_bounds,
-                "temporaryElevationMap": temporary_elevation_map,
-                "pointCloud": point_cloud_payload(ndt_map.points),
-                "voxels": voxel_payload(ndt_map, metrics),
-                "implicitMap": implicit_map_payload(ndt_map, metrics),
-                "stages": stage_payload(summary),
-            }
-            return self.state(include_terrain=True)
+                "globalExpanded": global_result.expanded_nodes,
+            },
+        )
+        local_result = None
+        local_bounds = None
+        temporary_elevation_map = None
+        if global_result.success and len(global_xy) >= 2:
+            local_layer = crop_pointcloud_local_window(
+                "paper_interactive_local",
+                ndt_map.points,
+                self.resolution,
+                center_xy=self.start,
+                radius=self.local_window_radius,
+            )
+            local_bounds = layer_bounds(local_layer.height.shape, local_layer.resolution, local_layer.origin_xy)
+            temporary_elevation_map = temporary_elevation_payload(
+                local_layer,
+                self.terrain_version,
+                self.start,
+                self.local_window_radius,
+            )
+            self.update_job(job_id, "local", {"localWindow": local_bounds, "temporaryElevationMap": temporary_elevation_map})
+            local_result = plan_hybrid_local(
+                ImplicitTerrainMap(local_layer),
+                start=(self.start[0], self.start[1], self.yaw),
+                global_path=global_xy,
+                config=hybrid_config(self.local_window_radius),
+                global_traversability=traversability_guide,
+            )
+
+        local_path = local_result.path if local_result is not None else []
+        local_path_xyz = path_with_height(local_path, height, self.resolution, terrain_origin)
+        summary = {
+            "success": bool(global_result.success and local_result is not None and local_result.success),
+            "scenario": self.scenario_key,
+            "cycle": self.cycle,
+            "total_ms": elapsed_ms(begin),
+            "ndt_ms": ndt_ms,
+            "global_ms": global_ms,
+            "local_ms": local_result.runtime_ms if local_result is not None else 0.0,
+            "raw_points": int(len(ndt_map.points)),
+            "occupied_voxels": int(len(ndt_map.occupied)),
+            "global_expanded": global_result.expanded_nodes,
+            "local_expanded": local_result.expanded_nodes if local_result is not None else 0,
+            "global_path_length_m": global_result.path_length_m,
+            "local_path_length_m": local_result.path_length_m if local_result is not None else 0.0,
+            "mean_traversal_cost": finite_or_none(global_result.mean_traversal_cost),
+            "max_traversal_cost": finite_or_none(global_result.max_traversal_cost),
+            "local_mean_risk": finite_or_none(local_result.mean_risk if local_result is not None else float("inf")),
+            "local_min_stability": local_result.min_stability if local_result is not None else 0.0,
+            "shared_traversable_voxels": len(traversability_guide.traversable_keys),
+            "global_traversability_checks": local_result.global_traversability_checks if local_result is not None else 0,
+            "global_normal_initializations": local_result.global_normal_initializations if local_result is not None else 0,
+            "local_traversable_voxels": local_result.local_traversable_voxels if local_result is not None else 0,
+            "local_cells": int((local_bounds["rows"] * local_bounds["cols"]) if local_bounds else 0),
+            "global_cells": int(height.size),
+            "planning_map_source": "point_cloud_derived",
+        }
+        self.last_plan = {
+            "summary": summary,
+            "globalPath": [[round(x, 4), round(y, 4)] for x, y in global_xy],
+            "globalPath3d": [[round(x, 4), round(y, 4), round(z, 4)] for x, y, z in global_result.path_xyz],
+            "localPath": [[round(x, 4), round(y, 4), round(yaw, 4)] for x, y, yaw in local_path],
+            "localPath3d": local_path_xyz,
+            "localWindow": local_bounds,
+            "temporaryElevationMap": temporary_elevation_map,
+            "pointCloud": point_cloud_payload(ndt_map.points),
+            "voxels": voxel_payload(ndt_map, metrics),
+            "implicitMap": implicit_map_payload(ndt_map, metrics),
+            "distributions": distribution_payload(ndt_map, metrics, global_result, local_result),
+            "stages": stage_payload(summary),
+        }
+        self.update_job(job_id, "done", {"plan": self.last_plan}, status="complete")
+        return self.state(include_terrain=True)
 
     def step(self) -> dict[str, Any]:
         with self.lock:
@@ -392,6 +441,7 @@ class PaperInteractiveDemo:
 
     def planning_context(
         self,
+        job_id: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray, NDTImplicitMap, NDTLocalTraversabilityGuide, dict[tuple[int, int, int], Any], float]:
         if (
             self.cached_terrain_version == self.terrain_version
@@ -413,8 +463,23 @@ class PaperInteractiveDemo:
         begin = time.perf_counter()
         reference_height, reference_obstacle = self.current_terrain()
         points = sample_points(reference_height, reference_obstacle, self.resolution, self.origin)
+        self.update_job(
+            job_id,
+            "cloud",
+            {
+                "pointCloud": point_cloud_payload(points),
+                "distributions": {"cloud": cloud_distribution(points)},
+            },
+        )
         pointcloud_layer = point_cloud_layer_from_points("paper_interactive_pointcloud", points, self.resolution)
-        ndt_map = NDTImplicitMap(points, ndt_config())
+        self.update_job(
+            job_id,
+            "ndt",
+            {
+                "terrain": terrain_payload(pointcloud_layer.height, pointcloud_layer.obstacle, self.resolution, pointcloud_layer.origin_xy, self.terrain_version),
+            },
+        )
+        ndt_map = NDTImplicitMap(points, ndt_config(points, self.resolution))
         metrics = ndt_map.compute_metrics()
         traversability_guide = NDTLocalTraversabilityGuide.from_ndt_map(ndt_map)
         self.cached_terrain_version = self.terrain_version
@@ -426,6 +491,24 @@ class PaperInteractiveDemo:
         self.cached_metrics = metrics
         return pointcloud_layer.height, pointcloud_layer.obstacle, ndt_map, traversability_guide, metrics, elapsed_ms(begin)
 
+    def update_job(self, job_id: int | None, stage: str, partial: dict[str, Any], status: str = "running") -> None:
+        with self.lock:
+            if job_id is None or self.active_job is None or self.active_job.get("id") != job_id:
+                return
+            job_partial = self.active_job.setdefault("partial", {})
+            merge_dict(job_partial, partial)
+            stages = self.active_job.setdefault("stages", [])
+            if stage not in [row.get("key") for row in stages]:
+                stages.append({"key": stage, "label": stage, "at": round(time.time(), 3)})
+            self.active_job.update(
+                {
+                    "status": status,
+                    "stage": stage,
+                    "version": int(self.active_job.get("version", 0)) + 1,
+                    "updatedAt": time.time(),
+                }
+            )
+
     def clear_cache(self) -> None:
         self.cached_terrain_version = -1
         self.cached_height = None
@@ -436,8 +519,11 @@ class PaperInteractiveDemo:
         self.cached_metrics = None
 
     def sim_payload(self) -> dict[str, Any]:
-        height, _, _, _, _, _ = self.planning_context()
-        origin = self.cached_layer_origin if self.cached_layer_origin is not None else self.origin
+        if self.cached_height is not None and self.cached_layer_origin is not None:
+            height, origin = self.cached_height, self.cached_layer_origin
+        else:
+            height, _ = self.current_terrain()
+            origin = self.origin
         start_z = sample_height_xy(height, self.resolution, origin, self.start)
         goal_z = sample_height_xy(height, self.resolution, origin, self.goal)
         return {
@@ -469,6 +555,9 @@ class PaperDemoHandler(BaseHTTPRequestHandler):
         if self.path.startswith("/api/state"):
             self.send_json(self.shared_demo.state(include_terrain=True))
             return
+        if self.path.startswith("/api/job"):
+            self.send_json(self.shared_demo.state(include_terrain=True))
+            return
         if self.path.startswith("/api/dev-version"):
             self.send_json({"version": dev_version(), "hotReload": self.dev_enabled})
             return
@@ -478,7 +567,7 @@ class PaperDemoHandler(BaseHTTPRequestHandler):
         data = self.read_json()
         try:
             if self.path == "/api/plan":
-                self.send_json(self.shared_demo.plan())
+                self.send_json(self.shared_demo.plan() if data.get("sync") else self.shared_demo.start_async_plan())
             elif self.path == "/api/step":
                 self.send_json(self.shared_demo.step())
             elif self.path == "/api/reset":
@@ -553,16 +642,8 @@ def dev_version() -> str:
     return "|".join(parts)
 
 
-def ndt_config() -> NDTConfig:
-    return NDTConfig(
-        voxel_size=0.24,
-        fusion_radius=0.52,
-        saturation_count=2,
-        slope_threshold_rad=np.deg2rad(50.0),
-        complexity_threshold=0.92,
-        robot_radius=0.28,
-        robot_height=0.55,
-    )
+def ndt_config(points: np.ndarray, resolution: float) -> NDTConfig:
+    return adaptive_ndt_config(points, resolution)
 
 
 def hybrid_config(local_window_radius: float) -> HybridLocalPlannerConfig:
@@ -674,7 +755,7 @@ def local_mean_height(height: np.ndarray) -> np.ndarray:
     return result
 
 
-def voxel_payload(ndt_map: NDTImplicitMap, metrics: dict[tuple[int, int, int], Any]) -> list[list[float]]:
+def voxel_payload(ndt_map: NDTImplicitMap, metrics: dict[tuple[int, int, int], Any], limit: int = 5200) -> list[list[float]]:
     voxels = []
     for key, metric in metrics.items():
         center = ndt_map.voxel_center(key)
@@ -695,7 +776,7 @@ def voxel_payload(ndt_map: NDTImplicitMap, metrics: dict[tuple[int, int, int], A
                 round(float(metric.normal[2]), 4),
             ]
         )
-    return sample_evenly(voxels, 1300)
+    return sample_evenly(voxels, limit)
 
 
 def point_cloud_payload(points: np.ndarray, limit: int = 1800) -> list[list[float]]:
@@ -711,7 +792,7 @@ def implicit_map_payload(ndt_map: NDTImplicitMap, metrics: dict[tuple[int, int, 
     risky = [metric for metric in values if metric.traversal_risk]
     normals = []
     gaussians = []
-    sampled_metrics = sample_evenly(values, 120)
+    sampled_metrics = sample_evenly(values, 220)
     for metric in sampled_metrics:
         center = ndt_map.voxel_center(metric.key)
         end = center + metric.normal * ndt_map.config.voxel_size * 0.9
@@ -749,6 +830,7 @@ def implicit_map_payload(ndt_map: NDTImplicitMap, metrics: dict[tuple[int, int, 
             )
     return {
         "voxelSize": ndt_map.config.voxel_size,
+        "verticalVoxelSize": ndt_map.config.z_voxel_size,
         "fusionRadius": ndt_map.config.fusion_radius,
         "octreeLeaves": ndt_map.octree.leaf_count,
         "octreeNodes": ndt_map.octree.node_count,
@@ -763,7 +845,83 @@ def implicit_map_payload(ndt_map: NDTImplicitMap, metrics: dict[tuple[int, int, 
         "meanSparsity": float(np.mean([metric.sparsity for metric in values])) if values else 0.0,
         "normals": normals,
         "gaussians": gaussians,
+        "distributions": ndt_distribution(ndt_map, metrics),
     }
+
+
+def distribution_payload(ndt_map, metrics, global_result, local_result) -> dict[str, Any]:
+    return {
+        "cloud": cloud_distribution(ndt_map.points),
+        "ndt": ndt_distribution(ndt_map, metrics),
+        "risk": metric_distribution(metrics),
+        "global": {
+            "expanded": int(global_result.expanded_nodes),
+            "pathPoints": len(global_result.path_xyz),
+            "pathLength": round(float(global_result.path_length_m), 4),
+            "maxCost": finite_or_none(global_result.max_traversal_cost),
+        },
+        "local": {
+            "expanded": int(local_result.expanded_nodes) if local_result is not None else 0,
+            "pathStates": int(local_result.path_states) if local_result is not None else 0,
+            "minStability": round(float(local_result.min_stability), 4) if local_result is not None else 0.0,
+            "meanRisk": finite_or_none(local_result.mean_risk if local_result is not None else float("inf")),
+        },
+    }
+
+
+def cloud_distribution(points: np.ndarray) -> dict[str, Any]:
+    points = np.asarray(points, dtype=np.float64)
+    return {
+        "count": int(len(points)),
+        "z": histogram_payload(points[:, 2], bins=10),
+    }
+
+
+def ndt_distribution(ndt_map: NDTImplicitMap, metrics: dict[tuple[int, int, int], Any]) -> dict[str, Any]:
+    counts = np.array([ndt_map.cells[key].count for key in ndt_map.occupied if key in ndt_map.cells], dtype=np.float64)
+    z_layers = np.array([key[2] for key in ndt_map.occupied], dtype=np.float64)
+    return {
+        "occupied": int(len(ndt_map.occupied)),
+        "xySize": round(float(ndt_map.config.voxel_size), 4),
+        "zSize": round(float(ndt_map.config.z_voxel_size), 4),
+        "pointsPerVoxel": histogram_payload(counts, bins=8),
+        "zLayers": histogram_payload(z_layers, bins=8),
+        **metric_distribution(metrics),
+    }
+
+
+def metric_distribution(metrics: dict[tuple[int, int, int], Any]) -> dict[str, Any]:
+    values = list(metrics.values())
+    if not values:
+        return {"cost": histogram_payload(np.array([]), bins=8), "roughness": histogram_payload(np.array([]), bins=8), "slope": histogram_payload(np.array([]), bins=8), "sparsity": histogram_payload(np.array([]), bins=8)}
+    costs = np.array([metric.traversal_cost if np.isfinite(metric.traversal_cost) else 1.0 for metric in values], dtype=np.float64)
+    return {
+        "cost": histogram_payload(costs, bins=8, lo=0.0, hi=1.0),
+        "roughness": histogram_payload(np.array([metric.roughness for metric in values], dtype=np.float64), bins=8, lo=0.0, hi=1.0),
+        "slope": histogram_payload(np.array([metric.slope for metric in values], dtype=np.float64), bins=8),
+        "sparsity": histogram_payload(np.array([metric.sparsity for metric in values], dtype=np.float64), bins=8, lo=0.0, hi=1.0),
+    }
+
+
+def histogram_payload(values: np.ndarray, bins: int, lo: float | None = None, hi: float | None = None) -> dict[str, Any]:
+    values = np.asarray(values, dtype=np.float64)
+    values = values[np.isfinite(values)]
+    if len(values) == 0:
+        return {"min": 0.0, "max": 0.0, "bins": [0 for _ in range(bins)]}
+    low = float(np.min(values)) if lo is None else lo
+    high = float(np.max(values)) if hi is None else hi
+    if high <= low:
+        high = low + 1e-6
+    counts, _ = np.histogram(np.clip(values, low, high), bins=bins, range=(low, high))
+    return {"min": round(low, 4), "max": round(high, 4), "bins": [int(v) for v in counts.tolist()]}
+
+
+def merge_dict(target: dict[str, Any], source: dict[str, Any]) -> None:
+    for key, value in source.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            merge_dict(target[key], value)
+        else:
+            target[key] = value
 
 
 def gaussian_axes(covariance: np.ndarray, voxel_size: float) -> list[np.ndarray]:

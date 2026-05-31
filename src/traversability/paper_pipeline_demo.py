@@ -11,7 +11,7 @@ from rich.table import Table
 
 from traversability.hybrid_local_planner import HybridLocalPlannerConfig, NDTLocalTraversabilityGuide, plan_hybrid_local
 from traversability.implicit_map import ImplicitTerrainMap
-from traversability.ndt_map import NDTConfig, NDTImplicitMap
+from traversability.ndt_map import NDTImplicitMap, adaptive_ndt_config
 from traversability.ndt_planner import plan_ndt_global
 from traversability.pointcloud import point_cloud_to_elevation_grid
 from traversability.terrain import TerrainLayer, analyze_layer, crop_local_window
@@ -36,18 +36,7 @@ def run_pipeline() -> dict:
     reference_height, reference_obstacle, resolution, origin = make_pipeline_terrain()
     points = sample_points(reference_height, reference_obstacle, resolution, origin)
     pointcloud_layer = point_cloud_layer_from_points("paper_pipeline_pointcloud", points, resolution)
-    ndt_map = NDTImplicitMap(
-        points,
-        NDTConfig(
-            voxel_size=0.24,
-            fusion_radius=0.52,
-            saturation_count=2,
-            slope_threshold_rad=np.deg2rad(50.0),
-            complexity_threshold=0.92,
-            robot_radius=0.28,
-            robot_height=0.55,
-        ),
-    )
+    ndt_map = NDTImplicitMap(points, adaptive_ndt_config(points, resolution))
     start = (-2.25, -1.35, 0.0)
     goal = (2.25, 1.35, 0.0)
     global_result = plan_ndt_global(ndt_map, start, goal)

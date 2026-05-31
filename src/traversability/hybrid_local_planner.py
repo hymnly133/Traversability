@@ -71,14 +71,18 @@ class NDTLocalTraversabilityGuide:
                     candidate = (key[0] + dx, key[1] + dy, key[2] + dz)
                     if candidate not in self.traversable_keys:
                         continue
-                    distance = dx * dx + dy * dy + dz * dz
+                    distance = (
+                        (dx * self.ndt_map.config.voxel_size) ** 2
+                        + (dy * self.ndt_map.config.voxel_size) ** 2
+                        + (dz * self.ndt_map.config.z_voxel_size) ** 2
+                    )
                     if distance < best_distance:
                         best_key = candidate
                         best_distance = distance
         return best_key
 
     def key_from_xyz(self, xyz: tuple[float, float, float]) -> tuple[int, int, int]:
-        index = np.floor((np.asarray(xyz, dtype=np.float64) - self.ndt_map.origin) / self.ndt_map.config.voxel_size)
+        index = np.floor((np.asarray(xyz, dtype=np.float64) - self.ndt_map.origin) / self.ndt_map.config.voxel_scale)
         return int(index[0]), int(index[1]), int(index[2])
 
 
@@ -223,7 +227,7 @@ def plan_hybrid_local(
             if local_traversable_set is not None:
                 global_traversability_checks += 1
                 local_traversable_queries += 1
-                max_distance = max(config.global_traversability_radius_cells, 1) * global_traversability.ndt_map.config.voxel_size * math.sqrt(3.0)
+                max_distance = global_query_radius(global_traversability.ndt_map, config.global_traversability_radius_cells)
                 traversable_key = local_traversable_set.nearest_key(
                     (successor.x, successor.y),
                     query.height,
@@ -650,9 +654,16 @@ def local_traversable_key(
     radius_cells: int,
 ) -> tuple[int, int, int] | None:
     if local_traversable_set is not None:
-        max_distance = max(radius_cells, 1) * global_traversability.ndt_map.config.voxel_size * math.sqrt(3.0)
+        max_distance = global_query_radius(global_traversability.ndt_map, radius_cells)
         return local_traversable_set.nearest_key(xy, z, max_distance)
     return global_traversability.nearest_traversable_key(xy, z, radius_cells)
+
+
+def global_query_radius(ndt_map: NDTImplicitMap, radius_cells: int) -> float:
+    radius = max(radius_cells, 1)
+    xy = radius * ndt_map.config.voxel_size
+    z = radius * ndt_map.config.z_voxel_size
+    return math.sqrt(xy * xy * 2.0 + z * z)
 
 
 def local_normal_at(

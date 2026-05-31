@@ -12,7 +12,7 @@ from rich.table import Table
 
 from traversability.hybrid_local_planner import HybridLocalPlannerConfig, NDTLocalTraversabilityGuide, plan_hybrid_local
 from traversability.implicit_map import ImplicitTerrainMap
-from traversability.ndt_map import NDTConfig, NDTImplicitMap
+from traversability.ndt_map import NDTConfig, NDTImplicitMap, adaptive_ndt_config
 from traversability.ndt_planner import plan_ndt_global
 from traversability.paper_pipeline_demo import crop_pointcloud_local_window, make_pipeline_terrain, point_cloud_layer_from_points, sample_points
 from traversability.realtime_demo import advance_along_path
@@ -22,7 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run receding-horizon NDT global + Hybrid local planning.")
     parser.add_argument("--output", type=Path, default=Path("runs/paper_receding"))
     parser.add_argument("--cycles", type=int, default=4)
-    parser.add_argument("--step-distance", type=float, default=0.72)
+    parser.add_argument("--step-distance", type=float, default=0.8)
     return parser.parse_args()
 
 
@@ -53,7 +53,7 @@ def run_receding(cycles: int, step_distance: float) -> dict:
         final_obstacle = obstacle
         points = sample_points(height, obstacle, resolution, origin)
         pointcloud_layer = point_cloud_layer_from_points(f"paper_receding_cycle_{cycle}", points, resolution)
-        ndt_map = NDTImplicitMap(points, ndt_config())
+        ndt_map = NDTImplicitMap(points, ndt_config(points, resolution))
         global_result = plan_ndt_global(ndt_map, (current[0], current[1], 0.0), (goal[0], goal[1], 0.0))
         global_xy = [(x, y) for x, y, _ in global_result.path_xyz]
         local_config = hybrid_config()
@@ -126,16 +126,8 @@ def run_receding(cycles: int, step_distance: float) -> dict:
     }
 
 
-def ndt_config() -> NDTConfig:
-    return NDTConfig(
-        voxel_size=0.24,
-        fusion_radius=0.52,
-        saturation_count=2,
-        slope_threshold_rad=np.deg2rad(50.0),
-        complexity_threshold=0.92,
-        robot_radius=0.28,
-        robot_height=0.55,
-    )
+def ndt_config(points: np.ndarray, resolution: float) -> NDTConfig:
+    return adaptive_ndt_config(points, resolution)
 
 
 def hybrid_config() -> HybridLocalPlannerConfig:
@@ -146,6 +138,7 @@ def hybrid_config() -> HybridLocalPlannerConfig:
         min_stability=0.28,
         max_iterations=6500,
         global_waypoint_limit=20,
+        global_traversability_radius_cells=2,
     )
 
 

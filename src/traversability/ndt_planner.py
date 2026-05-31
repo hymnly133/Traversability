@@ -159,7 +159,7 @@ def astar_ndt(
             new_cost = cost_so_far[current] + transition
             if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
                 cost_so_far[neighbor] = new_cost
-                priority = new_cost + euclidean_key_distance(neighbor, goal, ndt_map.config.voxel_size)
+                priority = new_cost + key_distance(neighbor, goal, ndt_map)
                 heapq.heappush(frontier, (priority, neighbor))
                 came_from[neighbor] = current
 
@@ -182,7 +182,7 @@ def ndt_transition_cost(
     neighbor: tuple[int, int, int],
     config: NDTPlannerConfig,
 ) -> float:
-    distance = euclidean_key_distance(current, neighbor, ndt_map.config.voxel_size)
+    distance = key_distance(current, neighbor, ndt_map)
     return config.length_weight * distance + config.traversal_weight * metrics[neighbor].traversal_cost
 
 
@@ -225,6 +225,13 @@ def neighbor_offsets(neighbor_mode: int) -> list[tuple[int, int, int]]:
 
 def positive_neighbor_offsets(neighbor_mode: int) -> list[tuple[int, int, int]]:
     return [offset for offset in neighbor_offsets(neighbor_mode) if offset > (0, 0, 0)]
+
+
+def key_distance(a: tuple[int, int, int], b: tuple[int, int, int], ndt_map: NDTImplicitMap) -> float:
+    dx = (a[0] - b[0]) * ndt_map.config.voxel_size
+    dy = (a[1] - b[1]) * ndt_map.config.voxel_size
+    dz = (a[2] - b[2]) * ndt_map.config.z_voxel_size
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
 
 
 def euclidean_key_distance(a: tuple[int, int, int], b: tuple[int, int, int], voxel_size: float) -> float:
