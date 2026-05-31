@@ -1,0 +1,1109 @@
+from __future__ import annotations
+
+
+INDEX_HTML = r"""<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terrain-Aware Planning Workbench</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0b0d0c;
+  --surface: #121611;
+  --surface-2: #171d17;
+  --surface-3: #20281f;
+  --line: #334032;
+  --line-strong: #556650;
+  --text: #f4f0df;
+  --muted: #aeb8a7;
+  --subtle: #7d8878;
+  --amber: #f3c84f;
+  --blue: #56b7ff;
+  --cyan: #4edfd1;
+  --green: #76dc92;
+  --red: #ff6658;
+  --violet: #b9a6ff;
+  --shadow: 0 18px 42px rgba(0,0,0,.32);
+  --radius: 7px;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 "Microsoft YaHei UI", "Microsoft YaHei", "Aptos", "Segoe UI", sans-serif;
+}
+button, input, select { font: inherit; }
+button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease, color .16s ease, box-shadow .16s ease;
+}
+button:hover { border-color: var(--line-strong); background: var(--surface-3); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+button.primary { background: var(--amber); border-color: var(--amber); color: #11120c; font-weight: 900; }
+button.active { border-color: var(--amber); color: var(--amber); box-shadow: inset 0 0 0 1px rgba(243,200,79,.25); }
+select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 0 10px;
+}
+.app {
+  height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(720px, 1fr) 424px;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255,255,255,.022) 1px, transparent 1px),
+    #0b0d0c;
+  background-size: 44px 44px;
+}
+.workspace { position: relative; min-width: 0; overflow: hidden; }
+#map3d { width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
+.topbar {
+  position: absolute;
+  inset: 14px 14px auto 14px;
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) auto;
+  gap: 12px;
+  pointer-events: none;
+}
+.brand, .status, .inspector, .camera-tools, .stage-strip, .readout {
+  border: 1px solid rgba(244,240,223,.14);
+  background: rgba(11,13,12,.76);
+  backdrop-filter: blur(14px);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.brand { padding: 11px 13px; pointer-events: auto; }
+.brand h1 { margin: 0; font-size: 16px; letter-spacing: 0; }
+.brand p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+.status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  font-weight: 900;
+  pointer-events: auto;
+}
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.dot.ok { background: var(--green); box-shadow: 0 0 17px rgba(118,220,146,.7); }
+.dot.busy { background: var(--amber); box-shadow: 0 0 17px rgba(243,200,79,.7); }
+.dot.fail { background: var(--red); box-shadow: 0 0 17px rgba(255,102,88,.7); }
+.stage-strip {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  padding: 8px;
+  pointer-events: auto;
+}
+.stage-chip {
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 7px;
+  align-items: start;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(18,22,17,.86);
+  text-align: left;
+}
+.stage-chip.active { border-color: var(--amber); background: rgba(44,39,20,.82); }
+.stage-index {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #343d31;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+}
+.stage-chip.ok .stage-index { background: rgba(118,220,146,.17); color: var(--green); }
+.stage-chip.fail .stage-index { background: rgba(255,102,88,.17); color: var(--red); }
+.stage-chip b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.stage-chip small { display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10px; }
+.camera-tools {
+  position: absolute;
+  right: 14px;
+  bottom: 88px;
+  display: grid;
+  grid-auto-flow: column;
+  gap: 7px;
+  padding: 7px;
+  pointer-events: auto;
+}
+.camera-tools button { min-height: 32px; padding: 0 10px; font-size: 12px; }
+.inspector {
+  position: absolute;
+  left: 14px;
+  top: 94px;
+  width: min(360px, calc(100% - 28px));
+  padding: 10px 11px;
+  pointer-events: none;
+}
+.inspector h2 { margin: 0; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--amber); }
+.inspector p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.readout {
+  position: absolute;
+  right: 14px;
+  top: 94px;
+  width: 220px;
+  padding: 9px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+.readout b { display: block; color: var(--text); font-size: 13px; }
+aside {
+  min-height: 0;
+  overflow-y: auto;
+  border-left: 1px solid var(--line);
+  background: linear-gradient(180deg, #151a14, #10130f);
+  padding: 14px;
+}
+.section { border-top: 1px solid var(--line); padding: 14px 0; }
+.section:first-child { border-top: 0; padding-top: 0; }
+h2 {
+  margin: 0 0 9px;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.hint { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+.button-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tool-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.edit-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; margin-top: 8px; }
+.tool-grid button, .edit-grid button { min-height: 34px; font-size: 12px; }
+.toggle-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.toggle {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.toggle input { width: 16px; height: 16px; accent-color: var(--amber); }
+.range {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 10px;
+  align-items: center;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.range input { grid-column: 1 / -1; width: 100%; accent-color: var(--amber); }
+.range b { color: var(--text); font-size: 12px; }
+.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.metric {
+  min-height: 62px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #10140f;
+  padding: 9px;
+}
+.metric span { display: block; color: var(--muted); font-size: 11px; }
+.metric strong { display: block; margin-top: 3px; font-size: 17px; letter-spacing: 0; }
+.metric.warn strong { color: var(--red); }
+.pipeline { display: grid; gap: 8px; }
+.stage-row {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  gap: 8px;
+  align-items: start;
+  min-height: 54px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #10140f;
+  padding: 8px;
+}
+.stage-row.active { border-color: var(--amber); background: #19170f; }
+.stage-dot {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #343d31;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+}
+.stage-dot.ok { background: rgba(118,220,146,.16); color: var(--green); }
+.stage-dot.fail { background: rgba(255,102,88,.16); color: var(--red); }
+.stage-row b { display: block; font-size: 12px; }
+.stage-row small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+.stage-row span { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.legend { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; color: var(--muted); font-size: 12px; }
+.swatch { display: inline-block; width: 28px; height: 4px; margin-right: 7px; vertical-align: middle; border-radius: 2px; background: var(--text); }
+.yellow { background: var(--amber); }
+.blue { background: var(--blue); }
+.green { background: var(--green); }
+.red { background: var(--red); }
+.cyan { background: var(--cyan); }
+.violet { background: var(--violet); }
+.costbar {
+  height: 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: linear-gradient(90deg, #4edfd1, #e6cf68, #ff6658);
+}
+@media (max-width: 1100px) {
+  body { overflow: auto; }
+  .app { min-height: 100vh; height: auto; grid-template-columns: 1fr; }
+  .workspace { height: 68vh; min-height: 520px; }
+  aside { border-left: 0; border-top: 1px solid var(--line); }
+  .stage-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .camera-tools { bottom: 184px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  button { transition: none; }
+}
+</style>
+</head>
+<body>
+<main class="app">
+  <section class="workspace">
+    <canvas id="map3d"></canvas>
+    <div class="topbar">
+      <div class="brand">
+        <h1>Terrain-Aware Planning Workbench</h1>
+        <p>点云采样 -> NDT 体素 -> 可通行性风险 -> 3D voxel A* -> Hybrid A* -> 稳定性 -> 滚动重规划</p>
+      </div>
+      <div class="status"><i id="statusDot" class="dot"></i><span id="statusText">空闲</span></div>
+    </div>
+    <div class="inspector">
+      <h2 id="focusTitle">主流程总览</h2>
+      <p id="focusDetail">运行一次规划后，可点击底部阶段查看该阶段对应的图层、耗时和关键输出。</p>
+    </div>
+    <div class="readout" id="hoverReadout"><b>地图拾取</b>拖拽旋转，滚轮缩放；单击按当前工具编辑。</div>
+    <div class="camera-tools">
+      <button id="viewIsoBtn" aria-label="切换到等轴视角">等轴</button>
+      <button id="viewTopBtn" aria-label="切换到俯视视角">俯视</button>
+      <button id="viewSideBtn" aria-label="切换到侧视视角">侧视</button>
+      <button id="fitBtn" aria-label="重置缩放">适配</button>
+    </div>
+    <div class="stage-strip" id="stageStrip"></div>
+  </section>
+  <aside>
+    <div class="section">
+      <h2>预设地图</h2>
+      <select id="scenarioSelect" aria-label="选择预设地图"></select>
+      <p class="hint" id="scenarioText">--</p>
+    </div>
+    <div class="section">
+      <h2>运行</h2>
+      <div class="button-grid">
+        <button class="primary" id="planBtn">规划</button>
+        <button id="stepBtn">前进一步</button>
+        <button id="autoBtn">自动重规划</button>
+        <button id="resetBtn">重置</button>
+      </div>
+    </div>
+    <div class="section">
+      <h2>路径与地形编辑</h2>
+      <div class="tool-grid">
+        <button data-mode="start">起点</button>
+        <button data-mode="goal">终点</button>
+        <button data-mode="obstacle" class="active">地形</button>
+      </div>
+      <div class="edit-grid">
+        <button data-edit="raise" class="active">抬高障碍</button>
+        <button data-edit="pit">挖低洼地</button>
+        <button data-edit="rough">粗糙地块</button>
+        <button data-edit="clear">清理平滑</button>
+      </div>
+      <div class="button-grid" style="margin-top:8px">
+        <button id="paperUpdateBtn">论文中途更新</button>
+        <button id="clearBtn">清除更新</button>
+      </div>
+      <p class="hint">单击地形执行当前工具；拖拽只旋转视角。按住 Shift 可放大笔刷。</p>
+      <label class="range">编辑半径 <b id="brushLabel">0.24 m</b><input id="brushRange" type="range" min="0.06" max="0.85" step="0.01" value="0.24"></label>
+      <label class="range">每步执行距离 <b id="stepLabel">0.72 m</b><input id="stepRange" type="range" min="0.2" max="1.2" step="0.02" value="0.72"></label>
+      <label class="range">局部窗口半径 <b id="windowLabel">3.20 m</b><input id="windowRange" type="range" min="1.6" max="3.2" step="0.05" value="3.2"></label>
+    </div>
+    <div class="section">
+      <h2>图层</h2>
+      <div class="toggle-grid">
+        <label class="toggle"><input type="checkbox" data-layer="terrain" checked>地形表面</label>
+        <label class="toggle"><input type="checkbox" data-layer="cloud" checked>点云</label>
+        <label class="toggle"><input type="checkbox" data-layer="voxels" checked>NDT 体素</label>
+        <label class="toggle"><input type="checkbox" data-layer="gaussians" checked>概率椭圆</label>
+        <label class="toggle"><input type="checkbox" data-layer="normals" checked>法向</label>
+        <label class="toggle"><input type="checkbox" data-layer="paths" checked>路径</label>
+        <label class="toggle"><input type="checkbox" data-layer="window" checked>局部窗口</label>
+        <label class="toggle"><input type="checkbox" data-layer="grid" checked>坐标网格</label>
+      </div>
+    </div>
+    <div class="section">
+      <h2>规划指标</h2>
+      <div class="metrics" id="metrics"></div>
+    </div>
+    <div class="section">
+      <h2>体素与可通行性</h2>
+      <div class="metrics" id="implicitMetrics"></div>
+      <p class="hint">Traversal cost</p>
+      <div class="costbar" aria-hidden="true"></div>
+      <p class="hint">青色低风险，黄色中等，红色为不可通行或高风险。</p>
+    </div>
+    <div class="section">
+      <h2>主流程单步分解</h2>
+      <div class="pipeline" id="pipeline"></div>
+    </div>
+    <div class="section">
+      <h2>图例</h2>
+      <div class="legend">
+        <div><i class="swatch yellow"></i>3D voxel A*</div>
+        <div><i class="swatch blue"></i>Hybrid A*</div>
+        <div><i class="swatch green"></i>执行轨迹</div>
+        <div><i class="swatch cyan"></i>NDT 法向</div>
+        <div><i class="swatch violet"></i>局部窗口</div>
+        <div><i class="swatch red"></i>风险/障碍</div>
+      </div>
+    </div>
+  </aside>
+</main>
+<script>
+const canvas = document.getElementById("map3d");
+const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+const statusDot = document.getElementById("statusDot");
+const statusText = document.getElementById("statusText");
+const hotReloadEnabled = __DEV_HOT_RELOAD__;
+const DEFAULT_Z_SCALE = 1.8;
+
+const layers = { terrain: true, cloud: true, voxels: true, gaussians: true, normals: true, paths: true, window: true, grid: true };
+const stageLayerMap = {
+  all: ["terrain", "cloud", "voxels", "gaussians", "normals", "paths", "window", "grid"],
+  cloud: ["terrain", "cloud", "grid"],
+  ndt: ["terrain", "voxels", "gaussians", "normals", "grid"],
+  risk: ["terrain", "voxels", "grid"],
+  global: ["terrain", "voxels", "paths", "grid"],
+  local: ["terrain", "paths", "window", "grid"],
+  stable: ["terrain", "normals", "paths", "window"],
+  recede: ["terrain", "paths", "window", "grid"]
+};
+const stageNotes = {
+  cloud: "输入点云来自当前高程图和动态障碍，作为 NDT 隐式体素地图的数据源。",
+  ndt: "每个占用体素维护点数、均值、协方差，并通过邻域 Gaussian 融合估计局部地形。",
+  risk: "roughness、slope、sparsity 与碰撞/跌落风险共同形成 traversal cost。",
+  global: "3D voxel A* 只在可通行连通体素集中搜索，黄色虚线显示全局路径。",
+  local: "Hybrid A* 在机器人中心局部窗口内贴地生成可执行轨迹，蓝色线为局部轨迹。",
+  stable: "局部规划用 NDT 法向初始化稳定性估计，并过滤低稳定构型。",
+  recede: "前进一步后以新位姿重新构建局部窗口并重规划，绿色线显示已执行轨迹。"
+};
+
+let state = null;
+let mode = "obstacle";
+let editMode = "raise";
+let auto = false;
+let busy = false;
+let brushRadius = 0.24;
+let focusStage = "all";
+let hoverTerrain = null;
+let devVersion = null;
+let drag = null;
+let needsTransform = true;
+
+const view = {
+  yaw: -Math.PI / 4,
+  pitch: 52 * Math.PI / 180,
+  basis: makeBasis(-Math.PI / 4, 52 * Math.PI / 180),
+  zScale: DEFAULT_Z_SCALE,
+  zoom: 1,
+  scale: 1,
+  ox: 0,
+  oy: 0,
+  pivot: [0, 0, 0]
+};
+
+class RenderQueue {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.items = [];
+    this.overlay = [];
+  }
+  push(depth, draw) { this.items.push({ depth, draw }); }
+  pushOverlay(draw) { this.overlay.push(draw); }
+  flush() {
+    this.items.sort((a, b) => b.depth - a.depth);
+    for (const item of this.items) item.draw(this.ctx);
+    for (const draw of this.overlay) draw(this.ctx);
+    this.items.length = 0;
+    this.overlay.length = 0;
+  }
+}
+
+async function api(path, body = {}) {
+  const res = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+async function loadState() {
+  const res = await fetch("/api/state", { cache: "no-store" });
+  state = await res.json();
+  needsTransform = true;
+  syncUi();
+}
+async function run(path, body = {}) {
+  if (busy) return;
+  busy = true;
+  setStatus("busy", "计算中");
+  try {
+    state = await api(path, body);
+    needsTransform = true;
+    syncUi();
+    const ok = state.plan?.summary?.success;
+    setStatus(ok ? "ok" : (state.plan ? "fail" : "ok"), state.plan ? (ok ? "就绪" : "无可行路径") : "空闲");
+  } catch (err) {
+    console.error(err);
+    setStatus("fail", "错误");
+  } finally {
+    busy = false;
+  }
+}
+async function pollDevVersion() {
+  if (!hotReloadEnabled) return;
+  try {
+    const res = await fetch("/api/dev-version", { cache: "no-store" });
+    if (!res.ok) return;
+    const payload = await res.json();
+    if (devVersion === null) {
+      devVersion = payload.version;
+      return;
+    }
+    if (payload.version !== devVersion) {
+      setStatus("busy", "热更新");
+      window.location.reload();
+    }
+  } catch {
+    setStatus("busy", "等待服务");
+  }
+}
+function setStatus(kind, text) {
+  statusDot.className = "dot " + kind;
+  statusText.textContent = text;
+}
+function fitCanvas() {
+  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  const w = Math.max(1, Math.floor(canvas.clientWidth * dpr));
+  const h = Math.max(1, Math.floor(canvas.clientHeight * dpr));
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+    needsTransform = true;
+  }
+}
+function clamp(value, lo, hi) { return Math.max(lo, Math.min(hi, value)); }
+function rebuildCamera() { view.basis = makeBasis(view.yaw, view.pitch); }
+function makeBasis(yaw, pitch) {
+  const cy = Math.cos(yaw);
+  const sy = Math.sin(yaw);
+  const cp = Math.cos(pitch);
+  const sp = Math.sin(pitch);
+  const right = [cy, sy, 0];
+  const up = [-sy * sp, cy * sp, cp];
+  const forward = [-sy * cp, cy * cp, -sp];
+  return { right, up, forward };
+}
+function worldRect() {
+  const t = state.terrain;
+  return { x0: t.origin[0], y0: t.origin[1], x1: t.origin[0] + (t.cols - 1) * t.resolution, y1: t.origin[1] + (t.rows - 1) * t.resolution };
+}
+function updatePivot() {
+  const r = worldRect();
+  view.pivot = [(r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2, (state.terrain.heightMin + state.terrain.heightMax) / 2];
+}
+function heightAt(x, y) {
+  const t = state.terrain;
+  const col = Math.max(0, Math.min(t.cols - 1, Math.round((x - t.origin[0]) / t.resolution)));
+  const row = Math.max(0, Math.min(t.rows - 1, Math.round((y - t.origin[1]) / t.resolution)));
+  return t.height[row * t.cols + col] || 0;
+}
+function obstacleAt(x, y) {
+  const t = state.terrain;
+  const col = Math.max(0, Math.min(t.cols - 1, Math.round((x - t.origin[0]) / t.resolution)));
+  const row = Math.max(0, Math.min(t.rows - 1, Math.round((y - t.origin[1]) / t.resolution)));
+  return Boolean(t.obstacle[row * t.cols + col]);
+}
+function rawProject(x, y, z = 0) {
+  const b = view.basis;
+  const px = x - view.pivot[0];
+  const py = y - view.pivot[1];
+  const pz = (z - view.pivot[2]) * view.zScale;
+  return [px * b.right[0] + py * b.right[1] + pz * b.right[2], px * b.up[0] + py * b.up[1] + pz * b.up[2]];
+}
+function project(x, y, z = 0) {
+  const p = rawProject(x, y, z);
+  return [p[0] * view.scale + view.ox, -p[1] * view.scale + view.oy];
+}
+function depthOf(x, y, z = 0) {
+  const b = view.basis;
+  const px = x - view.pivot[0];
+  const py = y - view.pivot[1];
+  const pz = (z - view.pivot[2]) * view.zScale;
+  return px * b.forward[0] + py * b.forward[1] + pz * b.forward[2];
+}
+function terrainDepthOf(x, y, row = 0, col = 0) {
+  const b = view.basis;
+  const px = x - view.pivot[0];
+  const py = y - view.pivot[1];
+  return px * b.forward[0] + py * b.forward[1] + (row * b.forward[1] + col * b.forward[0]) * 1e-5;
+}
+function updateTransform() {
+  if (!state?.terrain) return;
+  updatePivot();
+  const r = worldRect();
+  const z0 = state.terrain.heightMin;
+  const z1 = state.terrain.heightMax + 1.0;
+  const pts = [];
+  for (const x of [r.x0, r.x1]) for (const y of [r.y0, r.y1]) for (const z of [z0, z1]) pts.push(rawProject(x, y, z));
+  const minX = Math.min(...pts.map(p => p[0]));
+  const maxX = Math.max(...pts.map(p => p[0]));
+  const minY = Math.min(...pts.map(p => p[1]));
+  const maxY = Math.max(...pts.map(p => p[1]));
+  const padX = Math.max(90, canvas.width * 0.08);
+  const padTop = Math.max(100, canvas.height * 0.14);
+  const padBottom = Math.max(120, canvas.height * 0.17);
+  view.scale = view.zoom * Math.min(
+    (canvas.width - padX * 2) / Math.max(maxX - minX, 1e-6),
+    (canvas.height - padTop - padBottom) / Math.max(maxY - minY, 1e-6)
+  );
+  view.ox = canvas.width / 2;
+  view.oy = (padTop + canvas.height - padBottom) / 2;
+  needsTransform = false;
+}
+function fromScreenAtHeight(px, py, z = 0) {
+  const u = (px - view.ox) / view.scale;
+  const v = -(py - view.oy) / view.scale;
+  const b = view.basis;
+  const pz = (z - view.pivot[2]) * view.zScale;
+  const uu = u - pz * b.right[2];
+  const vv = v - pz * b.up[2];
+  const det = b.right[0] * b.up[1] - b.right[1] * b.up[0];
+  if (Math.abs(det) < 1e-6) return null;
+  const localX = (uu * b.up[1] - vv * b.right[1]) / det;
+  const localY = (vv * b.right[0] - uu * b.up[0]) / det;
+  return [localX + view.pivot[0], localY + view.pivot[1]];
+}
+function insideWorld(x, y) {
+  const r = worldRect();
+  return x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
+}
+function screenToTerrain(px, py) {
+  let xy = fromScreenAtHeight(px, py, state?.terrain ? state.terrain.heightMin : 0);
+  if (!xy) return null;
+  for (let i = 0; i < 10; i++) {
+    const z = heightAt(xy[0], xy[1]);
+    const next = fromScreenAtHeight(px, py, z);
+    if (!next) break;
+    if (Math.hypot(next[0] - xy[0], next[1] - xy[1]) < 1e-4) {
+      xy = next;
+      break;
+    }
+    xy = next;
+  }
+  const z = heightAt(xy[0], xy[1]);
+  return { x: xy[0], y: xy[1], z, obstacle: obstacleAt(xy[0], xy[1]), valid: insideWorld(xy[0], xy[1]) };
+}
+function terrainColor(t, obstacle) {
+  if (obstacle) return "rgba(255,102,88,.90)";
+  const r = Math.round(39 + 105 * t);
+  const g = Math.round(77 + 135 * Math.sin(t * Math.PI * .7));
+  const b = Math.round(52 + 54 * (1 - t));
+  return `rgb(${r},${g},${b})`;
+}
+function costColor(cost, risky, alpha = .74) {
+  if (risky > 0) return `rgba(255,102,88,${alpha})`;
+  const clamped = Math.max(0, Math.min(1, cost));
+  const r = Math.round(78 + 175 * clamped);
+  const g = Math.round(223 - 78 * clamped);
+  const b = Math.round(202 - 145 * clamped);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+function drawGrid(q) {
+  if (!layers.grid || !state?.terrain) return;
+  const r = worldRect();
+  const z = state.terrain.heightMin - 0.035;
+  const spacing = Math.max(0.5, Math.round((r.x1 - r.x0) / 6 * 10) / 10);
+  const lines = [];
+  for (let x = Math.ceil(r.x0 / spacing) * spacing; x <= r.x1 + 1e-6; x += spacing) lines.push([[x, r.y0, z], [x, r.y1, z]]);
+  for (let y = Math.ceil(r.y0 / spacing) * spacing; y <= r.y1 + 1e-6; y += spacing) lines.push([[r.x0, y, z], [r.x1, y, z]]);
+  for (const line of lines) {
+    const depth = (depthOf(...line[0]) + depthOf(...line[1])) / 2;
+    q.push(depth, ctx => drawLine3(ctx, line, "rgba(244,240,223,.16)", 1));
+  }
+}
+function drawTerrain(q) {
+  if (!layers.terrain) return;
+  const t = state.terrain;
+  const stride = Math.max(1, Math.ceil(Math.max(t.rows, t.cols) / 110));
+  const cells = [];
+  for (let row = 0; row < t.rows - stride; row += stride) {
+    for (let col = 0; col < t.cols - stride; col += stride) {
+      const x = t.origin[0] + col * t.resolution;
+      const y = t.origin[1] + row * t.resolution;
+      const s = t.resolution * stride;
+      const p1 = [x, y, heightAt(x, y)];
+      const p2 = [x + s, y, heightAt(x + s, y)];
+      const p3 = [x + s, y + s, heightAt(x + s, y + s)];
+      const p4 = [x, y + s, heightAt(x, y + s)];
+      const h = (p1[2] + p2[2] + p3[2] + p4[2]) * 0.25;
+      const n = (h - t.heightMin) / Math.max(t.heightMax - t.heightMin, 1e-6);
+      const color = terrainColor(Math.max(0, Math.min(1, n)), obstacleAt(x, y));
+      cells.push({ row, col, points: [p1, p2, p3, p4], color, order: terrainDepthOf(x + s * 0.5, y + s * 0.5) });
+    }
+  }
+  cells.sort((a, b) => b.order - a.order);
+  for (let index = 0; index < cells.length; index++) {
+    const cell = cells[index];
+    pushTerrainCell(q, cell.points, cell.color, index);
+  }
+}
+function pushTerrainCell(q, points, color, orderIndex) {
+  q.push(10_000_000 - orderIndex, ctx => {
+    const screen = points.map(p => project(p[0], p[1], p[2]));
+    ctx.beginPath();
+    ctx.moveTo(screen[0][0], screen[0][1]);
+    ctx.lineTo(screen[1][0], screen[1][1]);
+    ctx.lineTo(screen[2][0], screen[2][1]);
+    ctx.lineTo(screen[3][0], screen[3][1]);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(5,7,5,.20)";
+    ctx.lineWidth = 0.36;
+    ctx.stroke();
+  });
+}
+function drawPoints(q, points, color, size, alpha = 1) {
+  if (!points?.length) return;
+  for (const p of points) {
+    const z = p[2] || 0;
+    q.push(depthOf(p[0], p[1], z), ctx => {
+      const s = project(p[0], p[1], z);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = color;
+      ctx.fillRect(s[0] - size / 2, s[1] - size / 2, size, size);
+      ctx.globalAlpha = 1;
+    });
+  }
+}
+function drawVoxels(q) {
+  const plan = state.plan;
+  if (!layers.voxels || !plan?.voxels) return;
+  const size = Math.max(4, Math.min(13, view.scale * (plan.implicitMap?.voxelSize || .18) * .72));
+  for (const v of plan.voxels) {
+    q.push(depthOf(v[0], v[1], v[2]), ctx => {
+      const p = project(v[0], v[1], v[2]);
+      ctx.fillStyle = costColor(v[3], v[4], .64);
+      ctx.strokeStyle = v[4] > 0 ? "rgba(255,244,230,.45)" : "rgba(2,4,3,.34)";
+      ctx.lineWidth = 1;
+      ctx.fillRect(p[0] - size / 2, p[1] - size / 2, size, size);
+      ctx.strokeRect(p[0] - size / 2, p[1] - size / 2, size, size);
+    });
+  }
+}
+function drawGaussians(q) {
+  const gaussians = state.plan?.implicitMap?.gaussians;
+  if (!layers.gaussians || !gaussians) return;
+  for (const g of gaussians) {
+    q.push(depthOf(g[0], g[1], g[2]), ctx => {
+      const c = project(g[0], g[1], g[2]);
+      const a = project(g[0] + g[3], g[1] + g[4], g[2] + g[5]);
+      const b = project(g[0] + g[6], g[1] + g[7], g[2] + g[8]);
+      const rx = Math.max(3, Math.hypot(a[0] - c[0], a[1] - c[1]));
+      const ry = Math.max(2, Math.hypot(b[0] - c[0], b[1] - c[1]) * .72);
+      const angle = Math.atan2(a[1] - c[1], a[0] - c[0]);
+      const cost = Math.max(0, Math.min(1, g[12]));
+      ctx.save();
+      ctx.translate(c[0], c[1]);
+      ctx.rotate(angle);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fillStyle = costColor(cost, 0, .10);
+      ctx.strokeStyle = costColor(cost, 0, .48);
+      ctx.lineWidth = 1.1;
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    });
+  }
+}
+function drawNormals(q) {
+  const normals = state.plan?.implicitMap?.normals;
+  if (!layers.normals || !normals) return;
+  const ordered = normals.map(n => [depthOf(n[0], n[1], n[2]), n]).sort((a, b) => b[0] - a[0]);
+  for (const [depth, n] of ordered) {
+    q.push(depth, ctx => {
+      const a = project(n[0], n[1], n[2]);
+      const raw = project(n[3], n[4], n[5]);
+      const dx = raw[0] - a[0];
+      const dy = raw[1] - a[1];
+      const length = Math.hypot(dx, dy);
+      if (!Number.isFinite(length) || length < 1.5) return;
+      const capped = Math.min(18, Math.max(7, length));
+      const ux = dx / length;
+      const uy = dy / length;
+      const b = [a[0] + ux * capped, a[1] + uy * capped];
+      ctx.strokeStyle = "rgba(78,223,209,.86)";
+      ctx.fillStyle = "rgba(78,223,209,.86)";
+      ctx.lineWidth = 1.35;
+      ctx.beginPath();
+      ctx.moveTo(a[0], a[1]);
+      ctx.lineTo(b[0], b[1]);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(b[0], b[1]);
+      ctx.lineTo(b[0] - ux * 4 - uy * 2.2, b[1] - uy * 4 + ux * 2.2);
+      ctx.lineTo(b[0] - ux * 4 + uy * 2.2, b[1] - uy * 4 - ux * 2.2);
+      ctx.closePath();
+      ctx.fill();
+    });
+  }
+}
+function drawLine3(ctx, points, color, width, dash = []) {
+  if (!points || points.length < 2) return;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.setLineDash(dash);
+  ctx.beginPath();
+  points.forEach((p, i) => {
+    const z = p[2] ?? heightAt(p[0], p[1]);
+    const s = project(p[0], p[1], z);
+    if (i === 0) ctx.moveTo(s[0], s[1]); else ctx.lineTo(s[0], s[1]);
+  });
+  ctx.stroke();
+  ctx.restore();
+}
+function pushPolyline(q, points, color, width, dash = [], depthBias = 0) {
+  if (!points || points.length < 2) return;
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    const az = a[2] ?? heightAt(a[0], a[1]);
+    const bz = b[2] ?? heightAt(b[0], b[1]);
+    const depth = (depthOf(a[0], a[1], az) + depthOf(b[0], b[1], bz)) / 2 + depthBias;
+    q.push(depth, ctx => drawLine3(ctx, [[a[0], a[1], az], [b[0], b[1], bz]], color, width, dash));
+  }
+}
+function drawPaths(q) {
+  if (!layers.paths) return;
+  pushPolyline(q, state.plan?.globalPath3d, "#f3c84f", 4.5, [12, 8], -0.02);
+  pushPolyline(q, state.plan?.localPath3d, "#56b7ff", 5.5, [], -0.03);
+  const executed = (state.sim.trajectory || []).map(p => [p[0], p[1], heightAt(p[0], p[1]) + .12]);
+  pushPolyline(q, executed, "#76dc92", 4.2, [], -0.05);
+}
+function drawWindow(q) {
+  const w = state.plan?.localWindow;
+  if (!layers.window || !w) return;
+  const z = state.terrain.heightMin + 0.035;
+  const pts = [[w.x0, w.y0, z], [w.x1, w.y0, z], [w.x1, w.y1, z], [w.x0, w.y1, z], [w.x0, w.y0, z]];
+  pushPolyline(q, pts, "rgba(185,166,255,.82)", 2.3, [8, 6], -0.04);
+}
+function drawMarker(q, point, color, label) {
+  const groundZ = point.length >= 3 ? point[2] : heightAt(point[0], point[1]);
+  q.pushOverlay(ctx => {
+    const top = project(point[0], point[1], groundZ + .08);
+    const base = project(point[0], point[1], groundZ);
+    ctx.save();
+    ctx.strokeStyle = "rgba(244,240,223,.74)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(base[0], base[1]);
+    ctx.lineTo(top[0], top[1]);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.strokeStyle = "#050605";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(top[0], top[1], 8.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#f4f0df";
+    ctx.font = "800 12px Microsoft YaHei UI, Microsoft YaHei, Aptos, sans-serif";
+    ctx.fillText(label, top[0] + 12, top[1] - 10);
+    ctx.restore();
+  });
+}
+function drawHover(q) {
+  if (!hoverTerrain || !hoverTerrain.valid) return;
+  q.pushOverlay(ctx => {
+    const p = project(hoverTerrain.x, hoverTerrain.y, hoverTerrain.z + .07);
+    const radius = mode === "obstacle" ? Math.max(8, Math.min(48, brushRadius * view.scale * .58)) : 11;
+    ctx.save();
+    ctx.strokeStyle = mode === "obstacle" ? "rgba(243,200,79,.92)" : "rgba(244,240,223,.86)";
+    ctx.fillStyle = mode === "obstacle" ? "rgba(243,200,79,.10)" : "rgba(244,240,223,.08)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(p[0], p[1], radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(p[0] - 12, p[1]);
+    ctx.lineTo(p[0] + 12, p[1]);
+    ctx.moveTo(p[0], p[1] - 12);
+    ctx.lineTo(p[0], p[1] + 12);
+    ctx.stroke();
+    ctx.restore();
+  });
+}
+function render() {
+  fitCanvas();
+  if (state?.terrain && needsTransform) updateTransform();
+  ctx.fillStyle = "#0b0d0c";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (state?.terrain) {
+    const q = new RenderQueue(ctx);
+    drawGrid(q);
+    drawTerrain(q);
+    if (layers.cloud) drawPoints(q, state.plan?.pointCloud, "rgba(244,240,223,.70)", 2.35, .92);
+    drawGaussians(q);
+    drawVoxels(q);
+    drawNormals(q);
+    drawPaths(q);
+    drawWindow(q);
+    drawMarker(q, state.sim.startGround || state.sim.start, "#76dc92", "start");
+    drawMarker(q, state.sim.goalGround || state.sim.goal, "#ff6658", "goal");
+    drawHover(q);
+    q.flush();
+  }
+  requestAnimationFrame(render);
+}
+function metricHtml(rows) {
+  return rows.map(([k, v, warn]) => `<div class="metric ${warn ? "warn" : ""}"><span>${k}</span><strong>${v}</strong></div>`).join("");
+}
+function fmt(value, digits = 1, suffix = "") {
+  return Number.isFinite(value) ? `${Number(value).toFixed(digits)}${suffix}` : "--";
+}
+function syncScenarioUi() {
+  const select = document.getElementById("scenarioSelect");
+  const current = state?.sim?.scenario || "pipeline";
+  const options = state?.scenarios || [];
+  select.innerHTML = options.map(s => `<option value="${s.key}" ${s.key === current ? "selected" : ""}>${s.label}</option>`).join("");
+  const picked = options.find(s => s.key === current);
+  document.getElementById("scenarioText").textContent = picked?.description || "--";
+}
+function syncLayerChecks() {
+  document.querySelectorAll("[data-layer]").forEach(input => {
+    input.checked = Boolean(layers[input.dataset.layer]);
+  });
+}
+function syncFocus() {
+  const stages = state.plan?.stages || [];
+  const active = focusStage === "all" ? null : stages.find(s => s.key === focusStage);
+  document.getElementById("focusTitle").textContent = active ? active.label : "主流程总览";
+  document.getElementById("focusDetail").textContent = active ? `${stageNotes[active.key] || active.detail} ${active.detail || ""}` : "运行一次规划后，可点击底部阶段查看该阶段对应的图层、耗时和关键输出。";
+}
+function stageMarkup(row, index, compact = false) {
+  const active = row.key === focusStage;
+  if (compact) {
+    return `<button class="stage-chip ${row.ok ? "ok" : "fail"} ${active ? "active" : ""}" data-stage="${row.key}">
+      <i class="stage-index">${index + 1}</i><span><b>${row.label}</b><small>${row.detail || ""}</small></span>
+    </button>`;
+  }
+  return `<button class="stage-row ${active ? "active" : ""}" data-stage="${row.key}">
+    <i class="stage-dot ${row.ok ? "ok" : "fail"}">${index + 1}</i>
+    <div><b>${row.label}</b><small>${row.detail || ""}</small></div>
+    <span>${row.ms ? row.ms.toFixed(1) + " ms" : ""}</span>
+  </button>`;
+}
+function bindStageButtons() {
+  document.querySelectorAll("[data-stage]").forEach(btn => {
+    btn.onclick = () => {
+      focusStage = btn.dataset.stage;
+      const keep = new Set(stageLayerMap[focusStage] || stageLayerMap.all);
+      for (const key of Object.keys(layers)) layers[key] = keep.has(key);
+      syncUi();
+    };
+  });
+}
+function syncStages() {
+  const stages = state.plan?.stages || [];
+  document.getElementById("stageStrip").innerHTML = stages.length ? stages.map((row, i) => stageMarkup(row, i, true)).join("") : "";
+  document.getElementById("pipeline").innerHTML = stages.length ? stages.map((row, i) => stageMarkup(row, i, false)).join("") : "<p class=\"hint\">点击“规划”生成主流程单步结果。</p>";
+  bindStageButtons();
+}
+function syncUi() {
+  if (!state) return;
+  syncScenarioUi();
+  const s = state.plan?.summary;
+  document.getElementById("metrics").innerHTML = metricHtml([
+    ["周期", state.sim.cycle ?? 0],
+    ["总耗时", s ? fmt(s.total_ms, 1, " ms") : "--"],
+    ["全局路径", s ? fmt(s.global_path_length_m, 2, " m") : "--"],
+    ["局部轨迹", s ? fmt(s.local_path_length_m, 2, " m") : "--"],
+    ["全局扩展", s ? s.global_expanded : "--"],
+    ["局部扩展", s ? s.local_expanded : "--"],
+    ["最低稳定性", s ? fmt(s.local_min_stability, 2) : "--", s && s.local_min_stability < .28],
+    ["局部/全局网格", s ? `${s.local_cells}/${s.global_cells}` : "--"]
+  ]);
+  const im = state.plan?.implicitMap;
+  document.getElementById("implicitMetrics").innerHTML = metricHtml([
+    ["点云样本", s ? s.raw_points : "--"],
+    ["占用体素", s ? s.occupied_voxels : "--"],
+    ["可通行体素", s ? s.shared_traversable_voxels : "--"],
+    ["风险体素", im ? im.risk : "--", im && im.risk > im.finite * .45],
+    ["voxel size", im ? fmt(im.voxelSize, 2, " m") : "--"],
+    ["fusion radius", im ? fmt(im.fusionRadius, 2, " m") : "--"],
+    ["mean roughness", im ? fmt(im.meanRoughness, 3) : "--"],
+    ["mean slope", im ? fmt(im.meanSlope, 3) : "--"]
+  ]);
+  syncStages();
+  syncFocus();
+  syncLayerChecks();
+  document.querySelectorAll("[data-mode]").forEach(btn => btn.classList.toggle("active", btn.dataset.mode === mode));
+  document.querySelectorAll("[data-edit]").forEach(btn => btn.classList.toggle("active", btn.dataset.edit === editMode));
+  document.getElementById("stepRange").value = state.sim.stepDistance;
+  document.getElementById("windowRange").value = state.sim.localWindowRadius;
+  document.getElementById("stepLabel").textContent = `${Number(state.sim.stepDistance).toFixed(2)} m`;
+  document.getElementById("windowLabel").textContent = `${Number(state.sim.localWindowRadius).toFixed(2)} m`;
+  document.getElementById("brushLabel").textContent = `${brushRadius.toFixed(2)} m`;
+}
+function updateHoverReadout() {
+  const el = document.getElementById("hoverReadout");
+  if (!hoverTerrain?.valid) {
+    el.innerHTML = "<b>地图拾取</b>拖拽旋转，滚轮缩放；单击按当前工具编辑。";
+    return;
+  }
+  el.innerHTML = `<b>${hoverTerrain.x.toFixed(2)}, ${hoverTerrain.y.toFixed(2)}</b>z ${hoverTerrain.z.toFixed(2)} m · ${hoverTerrain.obstacle ? "障碍" : "可采样"}`;
+}
+function resetView(kind) {
+  if (kind === "top") {
+    view.yaw = -Math.PI / 4;
+    view.pitch = 0;
+  } else if (kind === "side") {
+    view.yaw = 0;
+    view.pitch = 72 * Math.PI / 180;
+  } else {
+    view.yaw = -Math.PI / 4;
+    view.pitch = 52 * Math.PI / 180;
+  }
+  rebuildCamera();
+  view.zoom = 1;
+  needsTransform = true;
+  syncUi();
+}
+function applyEditAt(x, y, event) {
+  if (!state?.terrain || busy) return;
+  if (mode === "start") run("/api/start", { x, y });
+  if (mode === "goal") run("/api/goal", { x, y });
+  if (mode === "obstacle") {
+    const radius = event.shiftKey ? Math.min(0.85, brushRadius * 1.75) : brushRadius;
+    if (editMode === "clear") run("/api/smooth", { x, y, radius });
+    if (editMode === "raise") run("/api/obstacle", { x, y, radius, delta: 0.75, obstacle: true, roughness: 0 });
+    if (editMode === "pit") run("/api/obstacle", { x, y, radius, delta: -0.42, obstacle: false, roughness: 0 });
+    if (editMode === "rough") run("/api/obstacle", { x, y, radius, delta: 0.04, obstacle: false, roughness: 0.16 });
+  }
+}
+document.getElementById("planBtn").onclick = () => run("/api/plan");
+document.getElementById("stepBtn").onclick = () => run("/api/step");
+document.getElementById("resetBtn").onclick = () => run("/api/reset");
+document.getElementById("clearBtn").onclick = () => run("/api/clear-obstacles");
+document.getElementById("paperUpdateBtn").onclick = () => run("/api/paper-update");
+document.getElementById("autoBtn").onclick = () => {
+  auto = !auto;
+  document.getElementById("autoBtn").classList.toggle("active", auto);
+};
+document.getElementById("scenarioSelect").onchange = e => run("/api/scenario", { key: e.target.value }).then(() => run("/api/plan"));
+document.querySelectorAll("[data-mode]").forEach(btn => btn.onclick = () => { mode = btn.dataset.mode; syncUi(); });
+document.querySelectorAll("[data-edit]").forEach(btn => btn.onclick = () => { editMode = btn.dataset.edit; mode = "obstacle"; syncUi(); });
+document.querySelectorAll("[data-layer]").forEach(input => input.onchange = e => {
+  layers[e.target.dataset.layer] = e.target.checked;
+  focusStage = "all";
+  syncFocus();
+});
+document.getElementById("brushRange").oninput = e => {
+  brushRadius = Number(e.target.value);
+  document.getElementById("brushLabel").textContent = `${brushRadius.toFixed(2)} m`;
+};
+document.getElementById("stepRange").oninput = e => { document.getElementById("stepLabel").textContent = `${Number(e.target.value).toFixed(2)} m`; };
+document.getElementById("stepRange").onchange = e => run("/api/params", { stepDistance: Number(e.target.value) });
+document.getElementById("windowRange").oninput = e => { document.getElementById("windowLabel").textContent = `${Number(e.target.value).toFixed(2)} m`; };
+document.getElementById("windowRange").onchange = e => run("/api/params", { localWindowRadius: Number(e.target.value) });
+document.getElementById("viewIsoBtn").onclick = () => resetView("iso");
+document.getElementById("viewTopBtn").onclick = () => resetView("top");
+document.getElementById("viewSideBtn").onclick = () => resetView("side");
+document.getElementById("fitBtn").onclick = () => { view.zoom = 1; needsTransform = true; };
+canvas.addEventListener("pointerdown", event => {
+  drag = {
+    x: event.clientX,
+    y: event.clientY,
+    yaw: view.yaw,
+    pitch: view.pitch,
+    moved: false,
+  };
+  canvas.setPointerCapture(event.pointerId);
+});
+canvas.addEventListener("pointermove", event => {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = canvas.width / rect.width;
+  hoverTerrain = screenToTerrain((event.clientX - rect.left) * dpr, (event.clientY - rect.top) * dpr);
+  updateHoverReadout();
+  if (!drag) return;
+  const dx = event.clientX - drag.x;
+  const dy = event.clientY - drag.y;
+  if (Math.hypot(dx, dy) > 4) drag.moved = true;
+  view.yaw = drag.yaw + dx * 0.006;
+  view.pitch = clamp(drag.pitch - dy * 0.006, 0, 82 * Math.PI / 180);
+  rebuildCamera();
+  needsTransform = true;
+});
+canvas.addEventListener("pointerup", event => {
+  const wasDrag = drag?.moved;
+  if (drag) canvas.releasePointerCapture(event.pointerId);
+  drag = null;
+  if (!wasDrag && hoverTerrain?.valid) applyEditAt(hoverTerrain.x, hoverTerrain.y, event);
+});
+canvas.addEventListener("pointerleave", () => {
+  hoverTerrain = null;
+  updateHoverReadout();
+});
+canvas.addEventListener("wheel", event => {
+  event.preventDefault();
+  view.zoom = Math.max(.55, Math.min(2.6, view.zoom * (event.deltaY < 0 ? 1.08 : .92)));
+  needsTransform = true;
+}, { passive: false });
+canvas.addEventListener("dblclick", event => {
+  if (!state?.terrain) return;
+  const rect = canvas.getBoundingClientRect();
+  const dpr = canvas.width / rect.width;
+  const hit = screenToTerrain((event.clientX - rect.left) * dpr, (event.clientY - rect.top) * dpr);
+  if (hit?.valid) applyEditAt(hit.x, hit.y, event);
+});
+window.addEventListener("resize", () => { needsTransform = true; });
+setInterval(() => { if (auto && !busy) run("/api/step"); }, 950);
+setInterval(pollDevVersion, 900);
+loadState().then(() => {
+  setStatus("ok", "就绪");
+  render();
+  pollDevVersion();
+  run("/api/plan");
+});
+</script>
+</body>
+</html>
+"""

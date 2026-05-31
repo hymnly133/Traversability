@@ -33,6 +33,7 @@ DOI: 10.1109/TRO.2025.3577015
 - 论文 V-D 对应的 Hybrid A* local planner 原型：motion primitives、局部窗口、全局路径 heuristic、traversability 与 tracked stability 节点过滤
 - 论文式 NDT global planner 到 Hybrid A* local planner 的集成链路 demo
 - 论文式 receding-horizon NDT global + Hybrid local 多周期重规划 demo，包含中途地图障碍更新
+- 论文式 3D 交互实时演示：浏览器等轴 3D Canvas 中显示点云、NDT 体素、隐式地图法向、全局/局部路径、稳定性和滚动重规划主线
 - 局部迭代几何平滑和风险验证
 - 局部轨迹优化，可在路径质量模式启用，在实时 benchmark 中关闭以保持低延迟
 - 滚动窗口实时重规划 benchmark，包含动态障碍注入
@@ -139,6 +140,59 @@ uv pip install -e .
 
 ```powershell
 .venv\Scripts\python.exe -m traversability.verify_paper_receding
+```
+
+运行论文式交互实时主线演示：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.paper_interactive_demo
+```
+
+默认会打开 `http://127.0.0.1:8765/`。界面支持切换 `pipeline / stairs / rubble / grass / hill / bridge / field` 预设地图，移动 start/goal、注入动态障碍、单步执行、自动滚动重规划，并实时显示点云输入、NDT 隐式体素建图、roughness/slope/sparsity 风险、3D voxel A*、局部 Hybrid A*、稳定性过滤和重规划指标。
+
+如果默认端口已被占用，可显式指定端口：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.paper_interactive_demo --port 8767
+```
+
+常用参数：
+
+- `--host 127.0.0.1`：绑定服务地址。
+- `--port 8765`：绑定服务端口。
+- `--no-browser`：只启动服务，不自动打开浏览器。
+- `--dev`：启用前端源码热更新轮询，修改 `paper_visualization_frontend.py` 后页面会自动刷新。
+- `--once`：只运行一个规划周期并打印 JSON 摘要，不启动网页服务。
+
+可视化界面使用说明：
+
+- `规划`：按当前地形、起点、终点和动态障碍运行一次完整主线。
+- `前进一步`：沿局部轨迹执行一小段，再以新的机器人位置重新规划。
+- `自动`：循环执行规划、前进和重规划；再次点击停止。
+- `起点` / `终点` / `地形`：选择模式后单击地形，分别移动起点、移动终点或按当前笔刷修改地形。按住 `Shift` 单击会放大笔刷。
+- `论文中途更新`：注入 rolling replanning demo 中的中途地图变化，用来观察主线如何绕开新障碍。
+- `清除更新`：移除手动和论文更新注入的动态障碍。
+- `每步执行距离`：控制每个重规划周期前进多远。
+- `局部窗口半径`：控制 Hybrid A* 使用的机器人中心局部地图范围。
+- `等轴` / `俯视` / `侧视` / `适配`：切换或重置视角。画布使用正交 yaw/pitch 相机，拖拽只改变方位角和俯仰角，不允许 roll，也不暴露额外的镜头倾斜/高度夸张参数。
+- `图层`：可单独开关地形表面、点云、NDT 体素、概率椭圆、隐式地图法向、路径、局部窗口和坐标网格。
+- 底部主流程阶段条：点击任一阶段会自动聚焦相关图层，并在左侧浮层显示该阶段的关键输出说明。
+
+画布图例：
+
+- 等轴 3D 地形表面用高度着色，红色区域表示障碍或高风险地形。
+- 白色点表示输入点云采样。
+- 半透明小方块表示 NDT 体素，颜色随 traversal cost 和风险状态变化。
+- 青色短线表示从 NDT 协方差/SVD 得到的局部地形法向，用于展示论文的隐式建图思想。
+- 黄色虚线表示 3D voxel A* 全局路径。
+- 蓝色实线表示贴地的 Hybrid A* 局部轨迹。
+- 紫色虚线框表示当前机器人中心局部规划窗口。
+- 绿色实线表示已经执行的滚动轨迹。
+
+单独验证交互主线计算入口：
+
+```powershell
+.venv\Scripts\python.exe -m traversability.verify_paper_interactive
 ```
 
 运行论文主线验证，只覆盖论文主线链路和典型地形场景，不运行对比方法或边缘实验：
@@ -275,6 +329,8 @@ src/traversability/hybrid_local_planner.py # 论文式 Hybrid A* local planner
 src/traversability/paper_pipeline_demo.py # NDT global + Hybrid local 集成链路
 src/traversability/paper_receding_demo.py # NDT global + Hybrid local 多周期重规划
 src/traversability/paper_scenario_suite.py # 论文典型地形场景 suite
+src/traversability/paper_interactive_demo.py # 论文主线浏览器交互实时演示
+src/traversability/paper_visualization_frontend.py # 交互主线 3D Canvas 工作台前端
 src/traversability/implicit_map.py       # 连续地形查询/隐式地图 facade
 src/traversability/planner.py            # 多层 terrain-aware A*
 src/traversability/trajectory_optimizer.py # 局部轨迹优化
@@ -300,6 +356,7 @@ src/traversability/verify_hybrid_local_planner.py # Hybrid A* local planner 验�
 src/traversability/verify_paper_pipeline.py # NDT global + Hybrid local 集成验证
 src/traversability/verify_paper_receding.py # NDT global + Hybrid local 多周期重规划验证
 src/traversability/verify_paper_scenarios.py # 论文典型地形场景验证
+src/traversability/verify_paper_interactive.py # 交互实时主线计算验证
 src/traversability/verify_paper_mainline.py # 论文主线验证入口
 runs/                                  # 运行后生成的结果
 ```

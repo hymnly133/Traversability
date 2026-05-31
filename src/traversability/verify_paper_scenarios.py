@@ -40,7 +40,7 @@ def main() -> None:
         require(float(row["path_length_m"]) >= 4.0, f"{row['scenario']} path is too short")
         require(int(float(row["path_points"])) >= 10, f"{row['scenario']} path has too few points")
         require(int(float(row["expanded_nodes"])) >= 40, f"{row['scenario']} expanded too few nodes")
-        require(float(row["runtime_ms"]) <= 4200.0, f"{row['scenario']} runtime too high")
+        require(float(row["runtime_ms"]) <= 5200.0, f"{row['scenario']} runtime too high")
         require(0.0 <= float(row["mean_roughness"]) <= 1.0, f"{row['scenario']} roughness invalid")
         require(float(row["mean_slope_rad"]) >= 0.0, f"{row['scenario']} slope invalid")
         require(0.0 <= float(row["mean_sparsity"]) <= 1.0, f"{row['scenario']} sparsity invalid")

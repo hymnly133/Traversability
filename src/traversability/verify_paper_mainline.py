@@ -16,6 +16,7 @@ def main() -> None:
         "traversability.verify_paper_pipeline",
         "traversability.verify_paper_receding",
         "traversability.verify_paper_scenarios",
+        "traversability.verify_paper_interactive",
     ]
     for module in modules:
         subprocess.run([sys.executable, "-m", module], check=True)

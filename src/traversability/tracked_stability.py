@@ -154,12 +154,28 @@ def query_local_heights(
 ) -> np.ndarray:
     cos_yaw = math.cos(yaw)
     sin_yaw = math.sin(yaw)
-    heights = []
-    for px, py in local_points:
-        wx = xy[0] + px * cos_yaw - py * sin_yaw
-        wy = xy[1] + px * sin_yaw + py * cos_yaw
-        heights.append(terrain_map.query((wx, wy)).height)
-    return np.asarray(heights, dtype=np.float64)
+    wx = xy[0] + local_points[:, 0] * cos_yaw - local_points[:, 1] * sin_yaw
+    wy = xy[1] + local_points[:, 0] * sin_yaw + local_points[:, 1] * cos_yaw
+    return bilinear_heights(terrain_map, wx, wy)
+
+
+def bilinear_heights(terrain_map: ImplicitTerrainMap, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
+    layer = terrain_map.layer
+    cols = (xs - layer.origin_xy[0]) / layer.resolution
+    rows = (ys - layer.origin_xy[1]) / layer.resolution
+    row0 = np.floor(np.clip(rows, 0, layer.height.shape[0] - 1)).astype(np.int64)
+    col0 = np.floor(np.clip(cols, 0, layer.height.shape[1] - 1)).astype(np.int64)
+    row1 = np.minimum(row0 + 1, layer.height.shape[0] - 1)
+    col1 = np.minimum(col0 + 1, layer.height.shape[1] - 1)
+    tr = np.clip(rows - row0, 0.0, 1.0)
+    tc = np.clip(cols - col0, 0.0, 1.0)
+    v00 = layer.height[row0, col0]
+    v01 = layer.height[row0, col1]
+    v10 = layer.height[row1, col0]
+    v11 = layer.height[row1, col1]
+    top = (1.0 - tc) * v00 + tc * v01
+    bottom = (1.0 - tc) * v10 + tc * v11
+    return ((1.0 - tr) * top + tr * bottom).astype(np.float64)
 
 
 def fit_plane(local_xy: np.ndarray, z: np.ndarray) -> np.ndarray:
