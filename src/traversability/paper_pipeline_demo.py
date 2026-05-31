@@ -13,7 +13,8 @@ from traversability.hybrid_local_planner import HybridLocalPlannerConfig, NDTLoc
 from traversability.implicit_map import ImplicitTerrainMap
 from traversability.ndt_map import NDTConfig, NDTImplicitMap
 from traversability.ndt_planner import plan_ndt_global
-from traversability.terrain import crop_local_window
+from traversability.pointcloud import point_cloud_to_elevation_grid
+from traversability.terrain import TerrainLayer, analyze_layer, crop_local_window
 
 
 def parse_args() -> argparse.Namespace:
@@ -32,30 +33,29 @@ def main() -> None:
 
 
 def run_pipeline() -> dict:
-    height, obstacle, resolution, origin = make_pipeline_terrain()
-    points = sample_points(height, obstacle, resolution, origin)
+    reference_height, reference_obstacle, resolution, origin = make_pipeline_terrain()
+    points = sample_points(reference_height, reference_obstacle, resolution, origin)
+    pointcloud_layer = point_cloud_layer_from_points("paper_pipeline_pointcloud", points, resolution)
     ndt_map = NDTImplicitMap(
         points,
         NDTConfig(
-            voxel_size=0.18,
-            fusion_radius=0.36,
+            voxel_size=0.24,
+            fusion_radius=0.52,
             saturation_count=2,
-            slope_threshold_rad=np.deg2rad(35.0),
-            complexity_threshold=0.82,
+            slope_threshold_rad=np.deg2rad(50.0),
+            complexity_threshold=0.92,
             robot_radius=0.28,
             robot_height=0.55,
         ),
     )
-    start = (-1.55, -0.75, 0.0)
-    goal = (1.55, 0.72, 0.0)
+    start = (-2.25, -1.35, 0.0)
+    goal = (2.25, 1.35, 0.0)
     global_result = plan_ndt_global(ndt_map, start, goal)
     global_xy = [(x, y) for x, y, _ in global_result.path_xyz]
-    local_layer = crop_local_window(
+    local_layer = crop_pointcloud_local_window(
         "paper_pipeline_local",
-        height,
-        obstacle,
+        points,
         resolution,
-        origin,
         center_xy=(global_xy[0][0], global_xy[0][1]),
         radius=3.0,
     )
@@ -76,32 +76,63 @@ def run_pipeline() -> dict:
         global_traversability=traversability_guide,
     )
     return {
-        "height": height,
-        "obstacle": obstacle,
+        "height": pointcloud_layer.height,
+        "obstacle": pointcloud_layer.obstacle,
+        "reference_height": reference_height,
+        "reference_obstacle": reference_obstacle,
         "resolution": resolution,
-        "origin": origin,
+        "origin": pointcloud_layer.origin_xy,
+        "reference_origin": origin,
         "points": points,
         "global": global_result,
         "local": local_result,
         "global_xy": global_xy,
         "shared_traversable_voxels": len(traversability_guide.traversable_keys),
-        "global_cells": int(height.size),
+        "global_cells": int(pointcloud_layer.height.size),
         "local_cells": int(local_layer.height.size),
+        "planning_map_source": "point_cloud_derived",
     }
 
 
 def make_pipeline_terrain() -> tuple[np.ndarray, np.ndarray, float, tuple[float, float]]:
     resolution = 0.05
-    size = 80
+    size = 112
     origin = (-(size * resolution) / 2.0, -(size * resolution) / 2.0)
     xs = origin[0] + np.arange(size) * resolution
     ys = origin[1] + np.arange(size) * resolution
     xx, yy = np.meshgrid(xs, ys)
-    height = 0.04 * np.sin(2.2 * xx) + 0.03 * np.cos(2.0 * yy)
-    height += 0.08 * np.exp(-(((xx + 0.9) / 0.32) ** 2 + ((yy - 0.55) / 0.24) ** 2))
-    obstacle = (np.abs(xx) < 0.18) & (yy > -0.55) & (yy < 0.70)
+    rng = np.random.default_rng(43)
+    height = (
+        0.08 * np.sin(2.4 * xx)
+        + 0.07 * np.cos(2.2 * yy)
+        + 0.055 * np.sin(5.0 * (xx + 0.35 * yy))
+        + 0.035 * np.cos(8.5 * (xx - yy))
+    )
+    height += 0.20 * np.exp(-(((xx + 1.25) / 0.42) ** 2 + ((yy - 0.82) / 0.30) ** 2))
+    height -= 0.16 * np.exp(-(((xx - 1.15) / 0.32) ** 2 + ((yy + 0.72) / 0.26) ** 2))
+    height += np.where((xx > -1.45) & (xx < -0.58) & (yy > -0.15) & (yy < 1.42), 0.065 * np.floor((yy + 0.15) / 0.18), 0.0)
+    height += np.where((xx > 0.62) & (xx < 1.52) & (yy > -1.56) & (yy < -0.20), 0.085 * np.floor((yy + 1.56) / 0.20), 0.0)
+    height += np.where((xx > -0.22) & (xx < 0.82) & (yy > 0.20) & (yy < 1.62), 0.44 * np.clip((yy - 0.20) / 1.42, 0.0, 1.0), 0.0)
+    for _ in range(24):
+        cx, cy = rng.uniform(-2.2, 2.1), rng.uniform(-2.0, 2.0)
+        radius = rng.uniform(0.055, 0.18)
+        bump = np.exp(-(((xx - cx) / radius) ** 2 + ((yy - cy) / (radius * rng.uniform(0.65, 1.35))) ** 2))
+        height += rng.uniform(0.035, 0.20) * bump
+    obstacle = (np.abs(xx) < 0.20) & (yy > -0.70) & (yy < 0.90)
+    obstacle |= ((xx + 1.42) ** 2 / 0.060 + (yy + 0.72) ** 2 / 0.10) < 1.0
+    obstacle |= ((xx - 1.48) ** 2 / 0.050 + (yy - 0.62) ** 2 / 0.15) < 1.0
+    obstacle |= (np.abs(yy - (0.55 * xx + 0.10)) < 0.055) & (xx > -1.75) & (xx < 1.55)
+    main_corridor = np.abs(yy - (0.62 * xx + 0.03)) < 0.46
+    lower_bypass = (np.abs(yy - (0.28 * xx - 0.92)) < 0.38) & (xx > -1.65) & (xx < 0.60)
+    upper_bypass = (np.abs(yy - (0.28 * xx + 0.92)) < 0.38) & (xx > -0.60) & (xx < 1.65)
+    corridor = main_corridor | lower_bypass | upper_bypass
+    corridor |= ((xx < -1.7) & (yy < -0.95)) | ((xx > 1.7) & (yy > 0.95))
+    obstacle &= ~corridor
+    obstacle |= (np.abs(xx) < 0.20) & (yy > -0.70) & (yy < 0.90)
     height = height.copy()
-    height[obstacle] += 0.85
+    corridor_height = 0.055 * np.sin(2.8 * xx) + 0.045 * np.cos(3.4 * yy) + 0.16 * np.clip((xx + 2.25) / 4.50, 0.0, 1.0)
+    height = np.where(corridor, corridor_height, height)
+    height[obstacle] += 1.05
     return height.astype(np.float64), obstacle, resolution, origin
 
 
@@ -123,6 +154,45 @@ def sample_points(
             z = height[row, col] + rng.normal(0.0, 0.012, size=samples)
             points.append(np.column_stack([x + jitter[:, 0], y + jitter[:, 1], z]))
     return np.vstack(points).astype(np.float64)
+
+
+def point_cloud_layer_from_points(
+    name: str,
+    points: np.ndarray,
+    resolution: float,
+) -> TerrainLayer:
+    grid = point_cloud_to_elevation_grid(
+        points,
+        resolution=resolution,
+        min_points_per_cell=1,
+        obstacle_height_percentile=97.0,
+        obstacle_relief_threshold=0.35,
+    )
+    return analyze_layer(name, grid.height, grid.obstacle, grid.resolution, grid.origin_xy)
+
+
+def crop_pointcloud_local_window(
+    name: str,
+    points: np.ndarray,
+    resolution: float,
+    center_xy: tuple[float, float],
+    radius: float,
+) -> TerrainLayer:
+    points = np.asarray(points, dtype=np.float64)
+    offset = points[:, :2] - np.asarray(center_xy, dtype=np.float64)
+    inside = np.linalg.norm(offset, axis=1) <= radius
+    if not np.any(inside):
+        raise ValueError("local point cloud window contains no points")
+    layer = point_cloud_layer_from_points(name, points[inside], resolution)
+    return crop_local_window(
+        name,
+        layer.height,
+        layer.obstacle,
+        layer.resolution,
+        layer.origin_xy,
+        center_xy=center_xy,
+        radius=radius,
+    )
 
 
 def write_outputs(output_dir: Path, result: dict) -> None:
@@ -156,6 +226,7 @@ def write_outputs(output_dir: Path, result: dict) -> None:
                 "local_traversable_queries",
                 "global_cells",
                 "local_cells",
+                "planning_map_source",
             ]
         )
         writer.writerow(
@@ -184,6 +255,7 @@ def write_outputs(output_dir: Path, result: dict) -> None:
                 local_result.local_traversable_queries,
                 result["global_cells"],
                 result["local_cells"],
+                result["planning_map_source"],
             ]
         )
 

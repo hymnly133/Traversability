@@ -17,7 +17,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a multilevel terrain-aware planning reproduction demo.")
     parser.add_argument("--output", type=Path, default=Path("runs/multilevel"))
     parser.add_argument("--seed", type=int, default=7)
-    parser.add_argument("--size", type=int, default=180)
+    parser.add_argument("--size", type=int, default=224)
     parser.add_argument("--resolution", type=float, default=0.25)
     parser.add_argument("--levels", type=int, default=4)
     return parser.parse_args()

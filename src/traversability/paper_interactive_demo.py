@@ -19,12 +19,11 @@ from traversability.hybrid_local_planner import HybridLocalPlannerConfig, NDTLoc
 from traversability.implicit_map import ImplicitTerrainMap
 from traversability.ndt_map import NDTConfig, NDTImplicitMap
 from traversability.ndt_planner import plan_ndt_global
-from traversability.paper_pipeline_demo import make_pipeline_terrain, sample_points
+from traversability.paper_pipeline_demo import crop_pointcloud_local_window, make_pipeline_terrain, point_cloud_layer_from_points, sample_points
 from traversability.paper_receding_demo import inject_dynamic_obstacle, yaw_from_path
 from traversability.paper_scenario_suite import Scenario, make_scenarios
-from traversability.paper_visualization_frontend import INDEX_HTML
+from traversability.paper_visualization_frontend import FRONTEND_INDEX_PATH, INDEX_HTML, load_index_html
 from traversability.realtime_demo import advance_along_path
-from traversability.terrain import crop_local_window
 
 
 DEFAULT_STEP_DISTANCE = 0.72
@@ -101,19 +100,20 @@ class PaperInteractiveDemo:
     origin: tuple[float, float] = field(init=False)
     scenarios: dict[str, InteractiveScenario] = field(init=False)
     scenario_key: str = "pipeline"
-    start: tuple[float, float] = (-1.55, -0.75)
-    goal: tuple[float, float] = (1.55, 0.72)
+    start: tuple[float, float] = (-2.25, -1.35)
+    goal: tuple[float, float] = (2.25, 1.35)
     yaw: float = 0.0
     cycle: int = 0
     step_distance: float = DEFAULT_STEP_DISTANCE
     local_window_radius: float = DEFAULT_LOCAL_WINDOW_RADIUS
     dynamic_blocks: list[DynamicBlock] = field(default_factory=list)
-    trajectory: list[tuple[float, float, float]] = field(default_factory=lambda: [(-1.55, -0.75, 0.0)])
+    trajectory: list[tuple[float, float, float]] = field(default_factory=lambda: [(-2.25, -1.35, 0.0)])
     last_plan: dict[str, Any] | None = None
     terrain_version: int = 0
     cached_terrain_version: int = -1
     cached_height: np.ndarray | None = None
     cached_obstacle: np.ndarray | None = None
+    cached_layer_origin: tuple[float, float] | None = None
     cached_ndt_map: NDTImplicitMap | None = None
     cached_traversability_guide: NDTLocalTraversabilityGuide | None = None
     cached_metrics: dict[tuple[int, int, int], Any] | None = None
@@ -157,14 +157,15 @@ class PaperInteractiveDemo:
 
     def state(self, include_terrain: bool = False) -> dict[str, Any]:
         with self.lock:
-            height, obstacle = self.current_terrain()
             payload: dict[str, Any] = {
                 "sim": self.sim_payload(),
                 "plan": self.last_plan,
                 "scenarios": scenario_options(self.scenarios),
             }
             if include_terrain:
-                payload["terrain"] = terrain_payload(height, obstacle, self.resolution, self.origin, self.terrain_version)
+                height, obstacle, _, _, _, _ = self.planning_context()
+                origin = self.cached_layer_origin if self.cached_layer_origin is not None else self.origin
+                payload["terrain"] = terrain_payload(height, obstacle, self.resolution, origin, self.terrain_version)
             return payload
 
     def set_start(self, x: float, y: float) -> dict[str, Any]:
@@ -247,23 +248,29 @@ class PaperInteractiveDemo:
         with self.lock:
             begin = time.perf_counter()
             height, obstacle, ndt_map, traversability_guide, metrics, ndt_ms = self.planning_context()
+            terrain_origin = self.cached_layer_origin if self.cached_layer_origin is not None else self.origin
             t0 = time.perf_counter()
             global_result = plan_ndt_global(ndt_map, (self.start[0], self.start[1], 0.0), (self.goal[0], self.goal[1], 0.0))
             global_ms = elapsed_ms(t0)
             global_xy = [(x, y) for x, y, _ in global_result.path_xyz]
             local_result = None
             local_bounds = None
+            temporary_elevation_map = None
             if global_result.success and len(global_xy) >= 2:
-                local_layer = crop_local_window(
+                local_layer = crop_pointcloud_local_window(
                     "paper_interactive_local",
-                    height,
-                    obstacle,
+                    ndt_map.points,
                     self.resolution,
-                    self.origin,
                     center_xy=self.start,
                     radius=self.local_window_radius,
                 )
                 local_bounds = layer_bounds(local_layer.height.shape, local_layer.resolution, local_layer.origin_xy)
+                temporary_elevation_map = temporary_elevation_payload(
+                    local_layer,
+                    self.terrain_version,
+                    self.start,
+                    self.local_window_radius,
+                )
                 local_result = plan_hybrid_local(
                     ImplicitTerrainMap(local_layer),
                     start=(self.start[0], self.start[1], self.yaw),
@@ -273,7 +280,7 @@ class PaperInteractiveDemo:
                 )
 
             local_path = local_result.path if local_result is not None else []
-            local_path_xyz = path_with_height(local_path, height, self.resolution, self.origin)
+            local_path_xyz = path_with_height(local_path, height, self.resolution, terrain_origin)
             summary = {
                 "success": bool(global_result.success and local_result is not None and local_result.success),
                 "scenario": self.scenario_key,
@@ -298,6 +305,7 @@ class PaperInteractiveDemo:
                 "local_traversable_voxels": local_result.local_traversable_voxels if local_result is not None else 0,
                 "local_cells": int((local_bounds["rows"] * local_bounds["cols"]) if local_bounds else 0),
                 "global_cells": int(height.size),
+                "planning_map_source": "point_cloud_derived",
             }
             self.last_plan = {
                 "summary": summary,
@@ -306,6 +314,7 @@ class PaperInteractiveDemo:
                 "localPath": [[round(x, 4), round(y, 4), round(yaw, 4)] for x, y, yaw in local_path],
                 "localPath3d": local_path_xyz,
                 "localWindow": local_bounds,
+                "temporaryElevationMap": temporary_elevation_map,
                 "pointCloud": point_cloud_payload(ndt_map.points),
                 "voxels": voxel_payload(ndt_map, metrics),
                 "implicitMap": implicit_map_payload(ndt_map, metrics),
@@ -388,6 +397,7 @@ class PaperInteractiveDemo:
             self.cached_terrain_version == self.terrain_version
             and self.cached_height is not None
             and self.cached_obstacle is not None
+            and self.cached_layer_origin is not None
             and self.cached_ndt_map is not None
             and self.cached_traversability_guide is not None
             and self.cached_metrics is not None
@@ -401,31 +411,35 @@ class PaperInteractiveDemo:
                 0.0,
             )
         begin = time.perf_counter()
-        height, obstacle = self.current_terrain()
-        points = sample_points(height, obstacle, self.resolution, self.origin)
+        reference_height, reference_obstacle = self.current_terrain()
+        points = sample_points(reference_height, reference_obstacle, self.resolution, self.origin)
+        pointcloud_layer = point_cloud_layer_from_points("paper_interactive_pointcloud", points, self.resolution)
         ndt_map = NDTImplicitMap(points, ndt_config())
         metrics = ndt_map.compute_metrics()
         traversability_guide = NDTLocalTraversabilityGuide.from_ndt_map(ndt_map)
         self.cached_terrain_version = self.terrain_version
-        self.cached_height = height
-        self.cached_obstacle = obstacle
+        self.cached_height = pointcloud_layer.height
+        self.cached_obstacle = pointcloud_layer.obstacle
+        self.cached_layer_origin = pointcloud_layer.origin_xy
         self.cached_ndt_map = ndt_map
         self.cached_traversability_guide = traversability_guide
         self.cached_metrics = metrics
-        return height, obstacle, ndt_map, traversability_guide, metrics, elapsed_ms(begin)
+        return pointcloud_layer.height, pointcloud_layer.obstacle, ndt_map, traversability_guide, metrics, elapsed_ms(begin)
 
     def clear_cache(self) -> None:
         self.cached_terrain_version = -1
         self.cached_height = None
         self.cached_obstacle = None
+        self.cached_layer_origin = None
         self.cached_ndt_map = None
         self.cached_traversability_guide = None
         self.cached_metrics = None
 
     def sim_payload(self) -> dict[str, Any]:
-        height, _ = self.current_terrain()
-        start_z = sample_height_xy(height, self.resolution, self.origin, self.start)
-        goal_z = sample_height_xy(height, self.resolution, self.origin, self.goal)
+        height, _, _, _, _, _ = self.planning_context()
+        origin = self.cached_layer_origin if self.cached_layer_origin is not None else self.origin
+        start_z = sample_height_xy(height, self.resolution, origin, self.start)
+        goal_z = sample_height_xy(height, self.resolution, origin, self.goal)
         return {
             "scenario": self.scenario_key,
             "start": [round(self.start[0], 4), round(self.start[1], 4), round(self.yaw, 4)],
@@ -449,7 +463,7 @@ class PaperDemoHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if self.path == "/" or self.path.startswith("/index.html"):
-            html = INDEX_HTML.replace("__DEV_HOT_RELOAD__", "true" if self.dev_enabled else "false")
+            html = load_index_html().replace("__DEV_HOT_RELOAD__", "true" if self.dev_enabled else "false")
             self.send_bytes(html.encode("utf-8"), "text/html; charset=utf-8")
             return
         if self.path.startswith("/api/state"):
@@ -531,7 +545,7 @@ def optional_float(value: Any) -> float | None:
 
 
 def dev_version() -> str:
-    paths = [Path(__file__), Path(__file__).with_name("paper_visualization_frontend.py")]
+    paths = [Path(__file__), FRONTEND_INDEX_PATH]
     parts = []
     for path in paths:
         stat = path.stat()
@@ -541,11 +555,11 @@ def dev_version() -> str:
 
 def ndt_config() -> NDTConfig:
     return NDTConfig(
-        voxel_size=0.18,
-        fusion_radius=0.36,
+        voxel_size=0.24,
+        fusion_radius=0.52,
         saturation_count=2,
-        slope_threshold_rad=np.deg2rad(35.0),
-        complexity_threshold=0.82,
+        slope_threshold_rad=np.deg2rad(50.0),
+        complexity_threshold=0.92,
         robot_radius=0.28,
         robot_height=0.55,
     )
@@ -573,8 +587,8 @@ def make_interactive_scenarios() -> dict[str, InteractiveScenario]:
             obstacle=obstacle,
             resolution=resolution,
             origin=origin,
-            start=(-1.55, -0.75),
-            goal=(1.55, 0.72),
+            start=(-2.25, -1.35),
+            goal=(2.25, 1.35),
             description="NDT 全局规划与 Hybrid A* 局部规划集成场景",
         )
     }
@@ -636,6 +650,19 @@ def terrain_payload(
         "height": np.round(height.astype(np.float64), 4).ravel().tolist(),
         "obstacle": obstacle.astype(np.uint8).ravel().tolist(),
     }
+
+
+def temporary_elevation_payload(
+    layer: Any,
+    version: int,
+    center_xy: tuple[float, float],
+    radius: float,
+) -> dict[str, Any]:
+    payload = terrain_payload(layer.height, layer.obstacle, layer.resolution, layer.origin_xy, version)
+    payload["source"] = "local_point_cloud_window"
+    payload["center"] = [round(float(center_xy[0]), 4), round(float(center_xy[1]), 4)]
+    payload["radius"] = round(float(radius), 4)
+    return payload
 
 
 def local_mean_height(height: np.ndarray) -> np.ndarray:

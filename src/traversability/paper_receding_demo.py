@@ -14,9 +14,8 @@ from traversability.hybrid_local_planner import HybridLocalPlannerConfig, NDTLoc
 from traversability.implicit_map import ImplicitTerrainMap
 from traversability.ndt_map import NDTConfig, NDTImplicitMap
 from traversability.ndt_planner import plan_ndt_global
-from traversability.paper_pipeline_demo import make_pipeline_terrain, sample_points
+from traversability.paper_pipeline_demo import crop_pointcloud_local_window, make_pipeline_terrain, point_cloud_layer_from_points, sample_points
 from traversability.realtime_demo import advance_along_path
-from traversability.terrain import crop_local_window
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,8 +37,8 @@ def main() -> None:
 
 def run_receding(cycles: int, step_distance: float) -> dict:
     base_height, base_obstacle, resolution, origin = make_pipeline_terrain()
-    goal = (1.55, 0.72)
-    current = (-1.55, -0.75)
+    goal = (1.50, -1.40)
+    current = (-2.25, -1.35)
     yaw = 0.0
     trajectory = [(current[0], current[1], yaw)]
     cycle_rows = []
@@ -53,16 +52,15 @@ def run_receding(cycles: int, step_distance: float) -> dict:
             inject_dynamic_obstacle(height, obstacle, resolution, origin)
         final_obstacle = obstacle
         points = sample_points(height, obstacle, resolution, origin)
+        pointcloud_layer = point_cloud_layer_from_points(f"paper_receding_cycle_{cycle}", points, resolution)
         ndt_map = NDTImplicitMap(points, ndt_config())
         global_result = plan_ndt_global(ndt_map, (current[0], current[1], 0.0), (goal[0], goal[1], 0.0))
         global_xy = [(x, y) for x, y, _ in global_result.path_xyz]
         local_config = hybrid_config()
-        local_layer = crop_local_window(
+        local_layer = crop_pointcloud_local_window(
             "paper_receding_local",
-            height,
-            obstacle,
+            points,
             resolution,
-            origin,
             center_xy=current,
             radius=local_config.local_window_radius,
         )
@@ -86,7 +84,7 @@ def run_receding(cycles: int, step_distance: float) -> dict:
                     current,
                     goal,
                     len(traversability_guide.traversable_keys),
-                    int(height.size),
+                    int(pointcloud_layer.height.size),
                     int(local_layer.height.size),
                     failed=True,
                 )
@@ -107,7 +105,7 @@ def run_receding(cycles: int, step_distance: float) -> dict:
                 current,
                 goal,
                 len(traversability_guide.traversable_keys),
-                int(height.size),
+                int(pointcloud_layer.height.size),
                 int(local_layer.height.size),
                 failed=False,
             )
@@ -130,11 +128,11 @@ def run_receding(cycles: int, step_distance: float) -> dict:
 
 def ndt_config() -> NDTConfig:
     return NDTConfig(
-        voxel_size=0.18,
-        fusion_radius=0.36,
+        voxel_size=0.24,
+        fusion_radius=0.52,
         saturation_count=2,
-        slope_threshold_rad=np.deg2rad(35.0),
-        complexity_threshold=0.82,
+        slope_threshold_rad=np.deg2rad(50.0),
+        complexity_threshold=0.92,
         robot_radius=0.28,
         robot_height=0.55,
     )
@@ -143,8 +141,8 @@ def ndt_config() -> NDTConfig:
 def hybrid_config() -> HybridLocalPlannerConfig:
     return HybridLocalPlannerConfig(
         step_length=0.22,
-        local_window_radius=2.6,
-        goal_tolerance=0.32,
+        local_window_radius=1.7,
+        goal_tolerance=0.45,
         min_stability=0.28,
         max_iterations=6500,
         global_waypoint_limit=20,
@@ -212,6 +210,7 @@ def cycle_row(
         "local_traversable_queries": local_result.local_traversable_queries,
         "global_cells": global_cells,
         "local_cells": local_cells,
+        "planning_map_source": "point_cloud_derived",
         "distance_to_goal_m": math.dist(current, goal),
     }
 
@@ -242,6 +241,7 @@ def write_outputs(output_dir: Path, result: dict) -> None:
             "local_traversable_queries",
             "global_cells",
             "local_cells",
+            "planning_map_source",
             "distance_to_goal_m",
         ]
         writer = csv.DictWriter(file, fieldnames=fieldnames)

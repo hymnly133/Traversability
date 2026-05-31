@@ -161,7 +161,7 @@ uv pip install -e .
 - `--host 127.0.0.1`：绑定服务地址。
 - `--port 8765`：绑定服务端口。
 - `--no-browser`：只启动服务，不自动打开浏览器。
-- `--dev`：启用前端源码热更新轮询，修改 `paper_visualization_frontend.py` 后页面会自动刷新。
+- `--dev`：启用前端源码热更新轮询，修改 `frontend/paper-workbench/index.html` 后页面会自动刷新。
 - `--once`：只运行一个规划周期并打印 JSON 摘要，不启动网页服务。
 
 可视化界面使用说明：
@@ -329,8 +329,9 @@ src/traversability/hybrid_local_planner.py # 论文式 Hybrid A* local planner
 src/traversability/paper_pipeline_demo.py # NDT global + Hybrid local 集成链路
 src/traversability/paper_receding_demo.py # NDT global + Hybrid local 多周期重规划
 src/traversability/paper_scenario_suite.py # 论文典型地形场景 suite
-src/traversability/paper_interactive_demo.py # 论文主线浏览器交互实时演示
-src/traversability/paper_visualization_frontend.py # 交互主线 3D Canvas 工作台前端
+src/traversability/paper_interactive_demo.py # 论文主线浏览器交互 API/静态服务
+src/traversability/paper_visualization_frontend.py # 唯一前端入口的 Python 兼容读取层
+frontend/paper-workbench/index.html       # 交互主线 3D Canvas 工作台前端
 src/traversability/implicit_map.py       # 连续地形查询/隐式地图 facade
 src/traversability/planner.py            # 多层 terrain-aware A*
 src/traversability/trajectory_optimizer.py # 局部轨迹优化

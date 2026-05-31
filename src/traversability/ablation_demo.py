@@ -27,7 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compare multilevel planning against a single-level baseline.")
     parser.add_argument("--output", type=Path, default=Path("runs/ablation"))
     parser.add_argument("--seed", type=int, default=7)
-    parser.add_argument("--size", type=int, default=180)
+    parser.add_argument("--size", type=int, default=224)
     parser.add_argument("--resolution", type=float, default=0.25)
     parser.add_argument("--levels", type=int, default=4)
     return parser.parse_args()

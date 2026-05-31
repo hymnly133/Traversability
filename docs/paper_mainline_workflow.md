@@ -320,7 +320,7 @@ plan -> execute short segment -> map update -> replan
 - 一键注入论文 rolling replanning demo 中的地图更新
 - 调整局部窗口半径和每周期执行距离
 - 单步执行或自动滚动重规划
-- 单独开关地形、点云、NDT 体素、概率椭圆、法向、路径、局部窗口和坐标网格
+- 单独开关点云派生地形、临时高程图、点云、NDT 体素、概率椭圆、法向、路径、局部窗口和坐标网格
 - 点击底部主流程阶段条，按阶段聚焦对应图层和关键说明
 - 实时查看 point cloud samples、occupied/traversable voxels、octree leaves/nodes、runtime、expanded nodes、稳定性和风险指标
 
@@ -336,7 +336,7 @@ plan -> execute short segment -> map update -> replan
 # 只启动服务，不自动打开浏览器
 .venv\Scripts\python.exe -m traversability.paper_interactive_demo --no-browser
 
-# 开发前端时启用源码热更新轮询
+# 开发唯一前端入口 frontend/paper-workbench/index.html 时启用源码热更新轮询
 .venv\Scripts\python.exe -m traversability.paper_interactive_demo --dev
 
 # CI/自动验证中只跑一个规划周期并输出 JSON 摘要
@@ -354,12 +354,13 @@ plan -> execute short segment -> map update -> replan
 7. 点击 `论文中途更新`：注入与 rolling replanning demo 对齐的中途地图变化，用于观察主线如何绕开新障碍。
 8. 使用 `每步执行距离` 调整每个重规划周期执行多远，使用 `局部窗口半径` 调整 Hybrid A* 处理的机器人中心局部地图范围。
 9. 使用 `等轴`、`俯视`、`侧视` 和 `适配` 切换或重置视角。画布使用正交 yaw/pitch 相机，拖拽只改变方位角和俯仰角，不允许 roll，也不暴露额外的镜头倾斜/高度夸张参数。
-10. 使用 `图层` 开关确认每个流程中间量：点云、NDT 体素、概率椭圆、法向、全局路径、局部路径和局部窗口。
+10. 使用 `图层` 开关确认每个流程中间量：点云派生地形、临时高程图、点云、NDT 体素、概率椭圆、法向、全局路径、局部路径和局部窗口。临时高程图由当前局部点云窗口反推得到，对应论文中接触点识别/稳定性估计时的临时 elevation map。
 11. 点击底部阶段条或右侧 `主流程单步分解`，可聚焦查看点云输入、NDT 建图、风险量化、全局规划、局部规划、稳定性过滤或滚动重规划。
 
 画布中各元素含义：
 
-- 等轴 3D 地形表面：颜色表示高程，红色区域表示障碍或高风险地形。
+- 等轴 3D 地形表面：默认显示点云派生地形，颜色表示高程，红色区域表示障碍或高风险地形。
+- 临时高程图：从机器人中心局部点云窗口反推的 2.5D 查询结构，用于对照稳定性估计里的接触高度查询；它不是仿真原始高程图。
 - 白色点：当前地形采样得到的 3D point cloud。
 - 半透明小方块：NDT implicit voxel map 的体素中心，颜色表示 traversal cost / risk。
 - 青色短线：由邻域 Gaussian 融合和协方差 SVD 得到的地形法向，展示隐式建图如何给局部稳定性初始化支撑面。
@@ -381,18 +382,15 @@ plan -> execute short segment -> map update -> replan
 
 推荐接入路径：
 
-1. 准备地形输入：
+1. 准备点云输入。真实系统应接入 LiDAR/SLAM 输出的去畸变点云和位姿；仿真 demo 中的高程图只用于生成参考点云：
 
 ```text
-height: np.ndarray
-obstacle: np.ndarray[bool]
-resolution: float
-origin: tuple[float, float]
+points: np.ndarray  # Nx3 xyz point cloud
 start: tuple[float, float, float]
 goal: tuple[float, float, float]
 ```
 
-2. 采样为点云：
+2. 仿真场景才执行高程图到点云采样：
 
 ```text
 sample_points(height, obstacle, resolution, origin)
@@ -410,9 +408,10 @@ NDTImplicitMap(points, ndt_config(resolution))
 plan_ndt_global(ndt_map, start, goal)
 ```
 
-5. 裁剪局部窗口并运行 Hybrid A*：
+5. 从点云派生局部高分辨率地图，再运行 Hybrid A*。原始高程图不进入局部规划或稳定性估计：
 
 ```text
+crop_pointcloud_local_window(points, resolution, center_xy, radius)
 plan_hybrid_local(...)
 ```
 
@@ -489,6 +488,7 @@ src/traversability/paper_interactive_demo.py
   论文主线交互式实时演示：预设地图、规划 API 和标准库 HTTP 服务
 
 src/traversability/paper_visualization_frontend.py
+frontend/paper-workbench/index.html
   交互主线 3D Canvas 工作台前端：渲染队列、阶段聚焦、拾取编辑和指标面板
 
 src/traversability/verify_paper_mainline.py

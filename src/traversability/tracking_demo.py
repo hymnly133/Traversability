@@ -19,7 +19,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Track a multilevel terrain-aware plan with a pure-pursuit robot model.")
     parser.add_argument("--output", type=Path, default=Path("runs/tracking"))
     parser.add_argument("--seed", type=int, default=7)
-    parser.add_argument("--size", type=int, default=180)
+    parser.add_argument("--size", type=int, default=224)
     parser.add_argument("--resolution", type=float, default=0.25)
     parser.add_argument("--levels", type=int, default=4)
     return parser.parse_args()
@@ -138,4 +138,3 @@ def print_summary(output_dir: Path, plan, tracking) -> None:
 
 if __name__ == "__main__":
     main()
-

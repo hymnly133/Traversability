@@ -18,7 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plan from a point-cloud-derived elevation map.")
     parser.add_argument("--output", type=Path, default=Path("runs/pointcloud"))
     parser.add_argument("--seed", type=int, default=7)
-    parser.add_argument("--size", type=int, default=160)
+    parser.add_argument("--size", type=int, default=224)
     parser.add_argument("--resolution", type=float, default=0.25)
     parser.add_argument("--levels", type=int, default=4)
     parser.add_argument("--input", type=Path, default=None, help="Optional .csv/.xyz/.txt/.npy/.ply point cloud file")

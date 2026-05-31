@@ -42,3 +42,4 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/traversability"]
+force-include = { "frontend/paper-workbench/index.html" = "traversability/frontend/paper-workbench/index.html" }

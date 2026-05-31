@@ -29,6 +29,7 @@ def main() -> None:
 
     require(summary["global_success"] == "1", "NDT global planner failed")
     require(summary["local_success"] == "1", "Hybrid local planner failed")
+    require(summary["planning_map_source"] == "point_cloud_derived", "mainline planning used a non-point-cloud map source")
     require(float(summary["global_path_length_m"]) >= 3.0, "global path is unexpectedly short")
     require(float(summary["local_path_length_m"]) >= 1.4, "local path is unexpectedly short")
     require(float(summary["local_path_length_m"]) <= float(summary["local_raw_path_length_m"]) + 0.25, "local smoothing made the path much longer")

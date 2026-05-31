@@ -32,7 +32,7 @@ class TerrainPyramid:
 
 
 def generate_large_rough_terrain(
-    size: int = 180,
+    size: int = 224,
     resolution: float = 0.25,
     seed: int = 7,
 ) -> tuple[np.ndarray, np.ndarray, tuple[float, float]]:
@@ -42,25 +42,43 @@ def generate_large_rough_terrain(
     xx, yy = np.meshgrid(x, y)
 
     height = (
-        0.45 * np.sin(2.6 * np.pi * xx + 0.4)
-        + 0.34 * np.cos(2.1 * np.pi * yy - 0.2)
-        + 0.22 * np.sin(3.8 * np.pi * (xx + yy))
-        + 0.16 * rng.normal(size=(size, size))
+        0.72 * np.sin(2.9 * np.pi * xx + 0.4)
+        + 0.52 * np.cos(2.5 * np.pi * yy - 0.2)
+        + 0.36 * np.sin(4.7 * np.pi * (xx + yy))
+        + 0.22 * np.cos(7.5 * np.pi * (xx - 0.45 * yy))
+        + 0.18 * np.sin(13.0 * xx + 6.0 * np.cos(yy))
+        + 0.22 * rng.normal(size=(size, size))
     )
 
-    ridge = 1.4 * np.exp(-((xx + 0.12) ** 2 / 0.012 + (yy - 0.08) ** 2 / 0.45))
-    trench = -0.9 * np.exp(-((xx - 0.33) ** 2 / 0.018 + (yy + 0.20) ** 2 / 0.16))
-    ramp = 0.75 * np.clip((xx + 0.55) / 0.55, 0.0, 1.0) * np.exp(-((yy + 0.55) ** 2) / 0.22)
-    height = height + ridge + trench + ramp
+    ridge = 2.1 * np.exp(-((xx + 0.12) ** 2 / 0.010 + (yy - 0.08) ** 2 / 0.40))
+    cross_ridge = 1.25 * np.exp(-(((yy - 0.48 * xx) - 0.12) ** 2 / 0.014 + (xx + 0.22) ** 2 / 0.70))
+    trench = -1.35 * np.exp(-((xx - 0.33) ** 2 / 0.014 + (yy + 0.20) ** 2 / 0.13))
+    side_trench = -0.72 * np.exp(-(((yy + 0.55 * xx) + 0.08) ** 2 / 0.010 + (xx - 0.15) ** 2 / 0.62))
+    ramp = 1.05 * np.clip((xx + 0.58) / 0.52, 0.0, 1.0) * np.exp(-((yy + 0.55) ** 2) / 0.18)
+    height = height + ridge + cross_ridge + trench + side_trench + ramp
+
+    for _ in range(42):
+        cx, cy = rng.uniform(-0.9, 0.9), rng.uniform(-0.9, 0.9)
+        radius_x = rng.uniform(0.018, 0.070)
+        radius_y = rng.uniform(0.018, 0.090)
+        sign = rng.choice([-1.0, 1.0], p=[0.35, 0.65])
+        mound = np.exp(-(((xx - cx) / radius_x) ** 2 + ((yy - cy) / radius_y) ** 2))
+        height += sign * rng.uniform(0.18, 0.65) * mound
 
     obstacle = np.zeros((size, size), dtype=bool)
-    obstacle |= ((xx + 0.40) ** 2 / 0.018 + (yy - 0.34) ** 2 / 0.045) < 1.0
-    obstacle |= ((xx - 0.48) ** 2 / 0.025 + (yy + 0.42) ** 2 / 0.030) < 1.0
-    obstacle |= (np.abs(xx - 0.05) < 0.035) & (yy > -0.65) & (yy < 0.28)
+    obstacle |= ((xx + 0.40) ** 2 / 0.020 + (yy - 0.34) ** 2 / 0.050) < 1.0
+    obstacle |= ((xx - 0.48) ** 2 / 0.030 + (yy + 0.42) ** 2 / 0.035) < 1.0
+    obstacle |= (np.abs(xx - 0.05) < 0.040) & (yy > -0.70) & (yy < 0.32)
+    obstacle |= (np.abs(yy + 0.30 * xx - 0.18) < 0.035) & (xx > -0.74) & (xx < 0.70)
 
-    debris = rng.random((size, size)) > 0.994
+    debris = rng.random((size, size)) > 0.990
     obstacle |= debris
-    height[obstacle] += 2.5
+    corridor = np.abs(yy - (0.58 * xx - 0.08)) < 0.16
+    corridor |= np.abs(yy + 0.20) < 0.10
+    corridor |= np.abs(yy - (0.95 * xx - 0.02)) < 0.18
+    obstacle &= ~corridor
+    height = np.where(corridor, 0.32 * np.sin(4.2 * xx) + 0.18 * np.cos(3.6 * yy), height)
+    height[obstacle] += 3.1
 
     origin = (-(size * resolution) / 2.0, -(size * resolution) / 2.0)
     return height.astype(np.float64), obstacle, origin

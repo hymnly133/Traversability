@@ -24,6 +24,7 @@ def main() -> None:
         trajectory = [(float(row["x"]), float(row["y"]), float(row["yaw"])) for row in csv.DictReader(file)]
 
     require(len(rows) >= 4, "too few receding cycles")
+    require(all(row["planning_map_source"] == "point_cloud_derived" for row in rows), "receding planning used a non-point-cloud map source")
     success_rate = sum(int(row["success"]) for row in rows) / len(rows)
     require(success_rate >= 0.90, "receding planning success rate too low")
     require(len(trajectory) == len(rows) + 1 or len(trajectory) == len(rows) + 2, "trajectory length does not match cycles")
